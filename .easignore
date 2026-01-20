@@ -1,0 +1,27 @@
+# Ignorar archivos innecesarios para el build
+node_modules/
+.expo/
+.git/
+*.log
+npm-debug.*
+yarn-error.*
+
+# Ignorar carpetas de desarrollo
+.vscode/
+.idea/
+
+# Ignorar archivos de OneDrive
+*.tmp
+~$*
+.~*
+
+# Ignorar archivos grandes
+*.mp4
+*.mov
+*.avi
+*.zip
+*.rar
+
+# Base de datos local
+database/
+supabase/

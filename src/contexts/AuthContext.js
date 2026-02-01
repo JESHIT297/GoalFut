@@ -3,6 +3,7 @@ import { supabase } from '../config/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CACHE_KEYS, USER_ROLES } from '../utils/constants';
 import notificationService from '../services/notificationService';
+import * as syncService from '../services/syncService';
 
 const AuthContext = createContext({});
 
@@ -83,6 +84,18 @@ export const AuthProvider = ({ children }) => {
                 if (pushToken) {
                     await notificationService.saveTokenToDatabase(data.id, pushToken);
                 }
+
+                // DESCARGA AUTOMÁTICA: Descargar todos los torneos y datos del usuario
+                // Esto ocurre en segundo plano después de login
+                const isAdmin = data.rol === USER_ROLES.ADMIN;
+                console.log(`Starting auto-download for user ${data.id} (admin: ${isAdmin})`);
+                syncService.downloadAllUserData(data.id, isAdmin)
+                    .then(result => {
+                        console.log('Auto-download completed:', result);
+                    })
+                    .catch(err => {
+                        console.error('Auto-download error:', err);
+                    });
             }
         } catch (error) {
             console.error('Error fetching user profile:', error);

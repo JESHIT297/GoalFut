@@ -3,18 +3,21 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
     Alert,
+    Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input, Loading, Card } from '../../components/common';
 import torneoService from '../../services/torneoService';
+import imageService from '../../services/imageService';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { COLORS, TOURNAMENT_STATUS } from '../../utils/constants';
 
 const EditarTorneoScreen = ({ route, navigation }) => {
+    const insets = useSafeAreaInsets();
     const { torneoId } = route.params;
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -25,11 +28,15 @@ const EditarTorneoScreen = ({ route, navigation }) => {
         lugar: '',
         duracion_tiempo_minutos: '20',
         cantidad_tiempos: '2',
+        max_jugadores_equipo: '12',
+        min_jugadores_equipo: '5',
         puntos_victoria: '3',
         puntos_empate: '1',
         puntos_derrota: '0',
     });
     const [errors, setErrors] = useState({});
+    const [imagenUri, setImagenUri] = useState(null);
+    const [originalImagenUrl, setOriginalImagenUrl] = useState(null);
 
     useEffect(() => {
         loadTorneo();
@@ -45,10 +52,17 @@ const EditarTorneoScreen = ({ route, navigation }) => {
                     lugar: data.lugar || '',
                     duracion_tiempo_minutos: String(data.duracion_tiempo_minutos || 20),
                     cantidad_tiempos: String(data.cantidad_tiempos || 2),
+                    max_jugadores_equipo: String(data.max_jugadores_equipo || 12),
+                    min_jugadores_equipo: String(data.min_jugadores_equipo || 5),
                     puntos_victoria: String(data.puntos_victoria || 3),
                     puntos_empate: String(data.puntos_empate || 1),
                     puntos_derrota: String(data.puntos_derrota || 0),
                 });
+                // Cargar imagen existente
+                if (data.imagen_url) {
+                    setImagenUri(data.imagen_url);
+                    setOriginalImagenUrl(data.imagen_url);
+                }
             }
         } catch (error) {
             Alert.alert('Error', getErrorMessage(error));
@@ -69,17 +83,50 @@ const EditarTorneoScreen = ({ route, navigation }) => {
         return Object.keys(newErrors).length === 0;
     };
 
+    // Seleccionar imagen del torneo
+    const seleccionarImagen = async () => {
+        try {
+            const result = await imageService.pickImage();
+            if (result) {
+                setImagenUri(result); // pickImage devuelve directamente la URI
+            }
+        } catch (error) {
+            Alert.alert('Error', 'No se pudo seleccionar la imagen');
+        }
+    };
+
     const handleSave = async () => {
         if (!validate()) return;
 
         setSaving(true);
         try {
+            // Subir nueva imagen si cambió
+            let imagenUrl = originalImagenUrl;
+            if (imagenUri && imagenUri !== originalImagenUrl) {
+                try {
+                    imagenUrl = await imageService.uploadImage(imagenUri, 'torneos', 'torneo');
+                } catch (imgError) {
+                    console.error('Error uploading image:', imgError);
+                }
+            } else if (!imagenUri && originalImagenUrl) {
+                // Si se eliminó la imagen, borrarla del storage
+                try {
+                    await imageService.deleteImage(originalImagenUrl);
+                    imagenUrl = null;
+                } catch (imgError) {
+                    console.error('Error deleting image:', imgError);
+                }
+            }
+
             await torneoService.actualizarTorneo(torneoId, {
                 nombre: formData.nombre.trim(),
                 descripcion: formData.descripcion.trim() || null,
                 lugar: formData.lugar.trim(),
+                imagen_url: imagenUrl,
                 duracion_tiempo_minutos: parseInt(formData.duracion_tiempo_minutos),
                 cantidad_tiempos: parseInt(formData.cantidad_tiempos),
+                max_jugadores_equipo: parseInt(formData.max_jugadores_equipo),
+                min_jugadores_equipo: parseInt(formData.min_jugadores_equipo),
                 puntos_victoria: parseInt(formData.puntos_victoria),
                 puntos_empate: parseInt(formData.puntos_empate),
                 puntos_derrota: parseInt(formData.puntos_derrota),
@@ -100,7 +147,7 @@ const EditarTorneoScreen = ({ route, navigation }) => {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()}>
                     <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
@@ -137,6 +184,40 @@ const EditarTorneoScreen = ({ route, navigation }) => {
                         placeholder="Ej: Polideportivo Central"
                         error={errors.lugar}
                     />
+
+                    {/* Imagen del torneo */}
+                    <Text style={styles.inputLabel}>Imagen del Torneo</Text>
+                    <View style={styles.imagenContainer}>
+                        {imagenUri ? (
+                            <View style={styles.imagenPreviewContainer}>
+                                <Image source={{ uri: imagenUri }} style={styles.imagenPreview} />
+                                <View style={styles.imagenActions}>
+                                    <TouchableOpacity
+                                        style={styles.cambiarImagenBtn}
+                                        onPress={seleccionarImagen}
+                                    >
+                                        <Ionicons name="camera-outline" size={18} color={COLORS.primary} />
+                                        <Text style={styles.cambiarImagenText}>Cambiar</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={styles.eliminarImagenBtn}
+                                        onPress={() => setImagenUri(null)}
+                                    >
+                                        <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                                        <Text style={styles.eliminarImagenText}>Eliminar</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ) : (
+                            <TouchableOpacity
+                                style={styles.imagenPickerBtn}
+                                onPress={seleccionarImagen}
+                            >
+                                <Ionicons name="trophy-outline" size={40} color={COLORS.textSecondary} />
+                                <Text style={styles.imagenPickerText}>Agregar imagen de copa</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
                 </Card>
 
                 <Card style={styles.section}>
@@ -156,6 +237,25 @@ const EditarTorneoScreen = ({ route, navigation }) => {
                                 label="Tiempos"
                                 value={formData.cantidad_tiempos}
                                 onChangeText={(v) => setFormData({ ...formData, cantidad_tiempos: v })}
+                                keyboardType="numeric"
+                            />
+                        </View>
+                    </View>
+
+                    <View style={styles.row}>
+                        <View style={styles.halfInput}>
+                            <Input
+                                label="Máx. Jugadores/Equipo"
+                                value={formData.max_jugadores_equipo}
+                                onChangeText={(v) => setFormData({ ...formData, max_jugadores_equipo: v })}
+                                keyboardType="numeric"
+                            />
+                        </View>
+                        <View style={styles.halfInput}>
+                            <Input
+                                label="Mín. Jugadores/Equipo"
+                                value={formData.min_jugadores_equipo}
+                                onChangeText={(v) => setFormData({ ...formData, min_jugadores_equipo: v })}
                                 keyboardType="numeric"
                             />
                         </View>
@@ -200,7 +300,7 @@ const EditarTorneoScreen = ({ route, navigation }) => {
                     style={styles.saveButton}
                 />
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -215,6 +315,18 @@ const styles = StyleSheet.create({
     halfInput: { flex: 1, paddingHorizontal: 8 },
     thirdInput: { flex: 1, paddingHorizontal: 8 },
     saveButton: { marginTop: 16, marginBottom: 32 },
+    // Estilos para imagen del torneo
+    inputLabel: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 8, marginTop: 16 },
+    imagenContainer: { marginBottom: 16 },
+    imagenPreviewContainer: { alignItems: 'center' },
+    imagenPreview: { width: 150, height: 150, borderRadius: 12, backgroundColor: COLORS.surfaceVariant },
+    imagenActions: { flexDirection: 'row', marginTop: 12 },
+    cambiarImagenBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: COLORS.primary },
+    cambiarImagenText: { marginLeft: 6, fontSize: 14, fontWeight: '600', color: COLORS.primary },
+    eliminarImagenBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: COLORS.error },
+    eliminarImagenText: { marginLeft: 6, fontSize: 14, fontWeight: '600', color: COLORS.error },
+    imagenPickerBtn: { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceVariant, borderRadius: 12, padding: 24, borderWidth: 2, borderColor: COLORS.border, borderStyle: 'dashed' },
+    imagenPickerText: { marginTop: 8, fontSize: 14, color: COLORS.textSecondary },
 });
 
 export default EditarTorneoScreen;

@@ -44,7 +44,7 @@ export default function App() {
           {Platform.OS === 'android' && (
             <StatusBar
               backgroundColor="transparent"
-              translucent={false}
+              translucent={true}
               barStyle="dark-content"
             />
           )}
@@ -55,3 +55,4 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+

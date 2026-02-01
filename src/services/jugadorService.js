@@ -1,4 +1,6 @@
 import { supabase } from '../config/supabase';
+import * as database from '../database/database';
+import * as syncService from './syncService';
 
 /**
  * Servicio para gestión de jugadores
@@ -6,17 +8,25 @@ import { supabase } from '../config/supabase';
 const jugadorService = {
     /**
      * Obtener jugadores de un equipo
+     * NO cachea - solo torneos seguidos se cachean via auto-download
      */
     getJugadoresByEquipo: async (equipoId) => {
-        const { data, error } = await supabase
-            .from('jugadores')
-            .select('*')
-            .eq('equipo_id', equipoId)
-            .eq('activo', true)
-            .order('numero_camiseta', { ascending: true });
+        try {
+            const { data, error } = await supabase
+                .from('jugadores')
+                .select('*')
+                .eq('equipo_id', equipoId)
+                .eq('activo', true)
+                .order('numero_camiseta', { ascending: true });
 
-        if (error) throw error;
-        return data;
+            if (error) throw error;
+            return data;
+        } catch (error) {
+            console.log('Error getting jugadores online, trying cache:', error.message);
+            // Offline: mostrar desde caché
+            const allJugadores = await database.getAllRecords('jugadores');
+            return allJugadores.filter(j => j.equipo_id === equipoId && j.activo !== false);
+        }
     },
 
     /**
@@ -37,9 +47,34 @@ const jugadorService = {
     },
 
     /**
-     * Crear un nuevo jugador
+     * Crear un nuevo jugador - con soporte offline
      */
     crearJugador: async (equipoId, jugadorData) => {
+        const online = await syncService.isOnline();
+
+        if (!online) {
+            // Create player offline with temporary ID
+            const offlinePlayer = {
+                id: `offline_player_${Date.now()}`,
+                equipo_id: equipoId,
+                ...jugadorData,
+                activo: true,
+                goles_totales: 0,
+                synced: 0,
+                offline: true,
+                created_at: new Date().toISOString()
+            };
+
+            // Save to local database
+            await database.insertRecord('jugadores', offlinePlayer);
+            // Add to sync queue
+            await database.addToSyncQueue('jugadores', 'INSERT', offlinePlayer.id, offlinePlayer);
+
+            console.log('Jugador guardado offline:', offlinePlayer.id);
+            return offlinePlayer;
+        }
+
+        // Online: normal flow
         const { data, error } = await supabase
             .from('jugadores')
             .insert({

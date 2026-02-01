@@ -1,41 +1,58 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
+# Dependencias
 node_modules/
 
 # Expo
 .expo/
 dist/
-web-build/
-expo-env.d.ts
-
-# Native
-.kotlin/
-*.orig.*
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
+*.orig.*
 
 # Metro
 .metro-health-check*
 
-# debug
+# Debug
 npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# macOS
+# Archivos del sistema
 .DS_Store
 *.pem
+Thumbs.db
 
-# local env files
-.env*.local
+# Editores
+.vscode/
+.idea/
 
-# typescript
-*.tsbuildinfo
+# Archivos temporales
+*.tmp
+~$*
+.~*
 
-# generated native folders
-/ios
-/android
+# Logs
+*.log
+
+# Archivos de build local
+android/
+ios/
+
+# Cache
+.cache/
+
+# Archivos de Gemini (asistente AI)
+.gemini/
+
+# Base de datos local de desarrollo
+database/*.db
+
+# Variables de entorno (si tuvieras)
+.env
+.env.local
+.env.production
+
+# Package lock (opcional, algunos lo excluyen)
+# package-lock.json

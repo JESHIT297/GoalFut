@@ -3,19 +3,21 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
     Alert,
     FlatList,
     Modal,
+    Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button, Input, Card } from '../../components/common';
 import torneoService from '../../services/torneoService';
 import equipoService from '../../services/equipoService';
 import partidoService from '../../services/partidoService';
+import imageService from '../../services/imageService';
 import { COLORS, TOURNAMENT_STATUS } from '../../utils/constants';
 import { formatDate } from '../../utils/helpers';
 
@@ -30,9 +32,9 @@ const DIAS_SEMANA = [
 ];
 
 const HORARIOS_DISPONIBLES = [
-    '08:00', '09:00', '10:00', '11:00', '12:00',
+    '08:00', '09:00', '10:00', '11:00', '12:00', '13:00',
     '14:00', '15:00', '16:00', '17:00', '18:00',
-    '19:00', '20:00', '21:00',
+    '19:00', '20:00', '21:00', '22:00', '23:00',
 ];
 
 const COLORES_EQUIPO = [
@@ -44,6 +46,7 @@ const COLORES_EQUIPO = [
 const LETRAS_GRUPO = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 const CrearTorneoScreen = ({ navigation }) => {
+    const insets = useSafeAreaInsets();
     const { userProfile } = useAuth();
     const [loading, setLoading] = useState(false);
     const [step, setStep] = useState(1);
@@ -55,6 +58,7 @@ const CrearTorneoScreen = ({ navigation }) => {
         descripcion: '',
         lugar: '',
     });
+    const [imagenUri, setImagenUri] = useState(null);
 
     // Paso 2: Configuración
     const [config, setConfig] = useState({
@@ -66,11 +70,13 @@ const CrearTorneoScreen = ({ navigation }) => {
         cantidad_tiempos: '2',
     });
 
-    // Paso 3: Puntos
+    // Paso 3: Puntos y W.O.
     const [puntos, setPuntos] = useState({
         puntos_victoria: '3',
         puntos_empate: '1',
         puntos_derrota: '0',
+        goles_wo_ganador: '3',
+        goles_wo_perdedor: '0',
     });
 
     // Paso 4: Equipos
@@ -82,8 +88,8 @@ const CrearTorneoScreen = ({ navigation }) => {
     const [gruposAsignados, setGruposAsignados] = useState({});
 
     // Paso 6: Programación
-    const [diasJuego, setDiasJuego] = useState(['sabado', 'domingo']);
-    const [horariosJuego, setHorariosJuego] = useState(['09:00', '10:30']);
+    const [diasJuego, setDiasJuego] = useState([]);
+    const [horariosJuego, setHorariosJuego] = useState([]);
 
     // Paso 7: Calendario generado
     const [partidosGenerados, setPartidosGenerados] = useState([]);
@@ -94,6 +100,18 @@ const CrearTorneoScreen = ({ navigation }) => {
         setter(prev => ({ ...prev, [field]: value }));
         if (errors[field]) {
             setErrors(prev => ({ ...prev, [field]: null }));
+        }
+    };
+
+    // Seleccionar imagen del torneo
+    const seleccionarImagen = async () => {
+        try {
+            const result = await imageService.pickImage();
+            if (result) {
+                setImagenUri(result); // pickImage devuelve directamente la URI
+            }
+        } catch (error) {
+            Alert.alert('Error', 'No se pudo seleccionar la imagen');
         }
     };
 
@@ -164,10 +182,22 @@ const CrearTorneoScreen = ({ navigation }) => {
         try {
             setLoading(true);
 
+            // Subir imagen si existe
+            let imagenUrl = null;
+            if (imagenUri) {
+                try {
+                    imagenUrl = await imageService.uploadImage(imagenUri, 'torneos', 'torneo');
+                } catch (imgError) {
+                    console.error('Error uploading image:', imgError);
+                    // Continuar sin imagen si falla la subida
+                }
+            }
+
             const torneoData = {
                 nombre: formData.nombre.trim(),
                 descripcion: formData.descripcion.trim() || null,
                 lugar: formData.lugar.trim() || null,
+                imagen_url: imagenUrl,
                 cantidad_equipos: parseInt(config.cantidad_equipos),
                 max_jugadores_equipo: parseInt(config.max_jugadores_equipo),
                 min_jugadores_equipo: parseInt(config.min_jugadores_equipo),
@@ -176,6 +206,8 @@ const CrearTorneoScreen = ({ navigation }) => {
                 puntos_victoria: parseInt(puntos.puntos_victoria),
                 puntos_empate: parseInt(puntos.puntos_empate),
                 puntos_derrota: parseInt(puntos.puntos_derrota),
+                goles_wo_ganador: parseInt(puntos.goles_wo_ganador) || 3,
+                goles_wo_perdedor: parseInt(puntos.goles_wo_perdedor) || 0,
                 estado: TOURNAMENT_STATUS.CONFIGURACION,
             };
 
@@ -275,7 +307,18 @@ const CrearTorneoScreen = ({ navigation }) => {
         };
         const gameDays = diasJuego.map(d => dayMap[d]).sort((a, b) => a - b);
 
+        // Función para formatear fecha en formato local YYYY-MM-DD
+        const formatLocalDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
         let currentDate = new Date();
+        // Establecer hora a mediodía para evitar problemas de timezone
+        currentDate.setHours(12, 0, 0, 0);
+
         // Encontrar próximo día de juego
         while (!gameDays.includes(currentDate.getDay())) {
             currentDate.setDate(currentDate.getDate() + 1);
@@ -283,6 +326,9 @@ const CrearTorneoScreen = ({ navigation }) => {
 
         let globalJornada = 1;
         let horarioIndex = 0;
+
+        // Usar los horarios seleccionados por el usuario
+        const horariosOrdenados = [...horariosJuego].sort();
 
         // Generar partidos por cada grupo
         for (let g = 0; g < numGrupos; g++) {
@@ -295,7 +341,7 @@ const CrearTorneoScreen = ({ navigation }) => {
 
             // Asignar fechas y horas
             matches.forEach((match, idx) => {
-                if (horarioIndex >= horariosJuego.length) {
+                if (horarioIndex >= horariosOrdenados.length) {
                     horarioIndex = 0;
                     // Avanzar al siguiente día de juego
                     do {
@@ -303,8 +349,9 @@ const CrearTorneoScreen = ({ navigation }) => {
                     } while (!gameDays.includes(currentDate.getDay()));
                 }
 
-                match.fecha = currentDate.toISOString().split('T')[0];
-                match.hora = horariosJuego[horarioIndex];
+                // Usar formato de fecha local, no UTC
+                match.fecha = formatLocalDate(currentDate);
+                match.hora = horariosOrdenados[horarioIndex];
                 match.jornada = globalJornada;
 
                 horarioIndex++;
@@ -426,6 +473,40 @@ const CrearTorneoScreen = ({ navigation }) => {
                 placeholder="Ej: Cancha San Miguel"
                 icon={<Ionicons name="location-outline" size={20} color={COLORS.textSecondary} />}
             />
+
+            {/* Imagen del torneo */}
+            <Text style={styles.inputLabel}>Imagen del Torneo (Opcional)</Text>
+            <View style={styles.imagenContainer}>
+                {imagenUri ? (
+                    <View style={styles.imagenPreviewContainer}>
+                        <Image source={{ uri: imagenUri }} style={styles.imagenPreview} />
+                        <View style={styles.imagenActions}>
+                            <TouchableOpacity
+                                style={styles.cambiarImagenBtn}
+                                onPress={seleccionarImagen}
+                            >
+                                <Ionicons name="camera-outline" size={18} color={COLORS.primary} />
+                                <Text style={styles.cambiarImagenText}>Cambiar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.eliminarImagenBtn}
+                                onPress={() => setImagenUri(null)}
+                            >
+                                <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                                <Text style={styles.eliminarImagenText}>Eliminar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                ) : (
+                    <TouchableOpacity
+                        style={styles.imagenPickerBtn}
+                        onPress={seleccionarImagen}
+                    >
+                        <Ionicons name="trophy-outline" size={40} color={COLORS.textSecondary} />
+                        <Text style={styles.imagenPickerText}>Agregar imagen de copa o trofeo</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
         </View>
     );
 
@@ -480,6 +561,27 @@ const CrearTorneoScreen = ({ navigation }) => {
                     />
                 </View>
             </View>
+
+            <View style={styles.row}>
+                <View style={styles.half}>
+                    <Input
+                        label="Máx. Jugadores/Equipo"
+                        value={config.max_jugadores_equipo}
+                        onChangeText={(v) => updateField(setConfig, 'max_jugadores_equipo', v)}
+                        keyboardType="numeric"
+                        placeholder="12"
+                    />
+                </View>
+                <View style={styles.half}>
+                    <Input
+                        label="Mín. Jugadores/Equipo"
+                        value={config.min_jugadores_equipo}
+                        onChangeText={(v) => updateField(setConfig, 'min_jugadores_equipo', v)}
+                        keyboardType="numeric"
+                        placeholder="5"
+                    />
+                </View>
+            </View>
         </View>
     );
 
@@ -518,6 +620,35 @@ const CrearTorneoScreen = ({ navigation }) => {
                             onChangeText={(v) => updateField(setPuntos, 'puntos_derrota', v)}
                             keyboardType="numeric"
                             style={styles.pointInput}
+                        />
+                    </View>
+                </View>
+
+                {/* Configuración W.O. (Walkover) */}
+                <Text style={[styles.pointLabel, { marginTop: 16, marginBottom: 8, textAlign: 'center' }]}>
+                    Resultado por W.O. (Walkover)
+                </Text>
+                <View style={styles.pointsRow}>
+                    <View style={styles.pointItem}>
+                        <Ionicons name="checkmark-done" size={28} color={COLORS.success} />
+                        <Text style={styles.pointLabel}>Ganador</Text>
+                        <Input
+                            value={puntos.goles_wo_ganador}
+                            onChangeText={(v) => updateField(setPuntos, 'goles_wo_ganador', v)}
+                            keyboardType="numeric"
+                            style={styles.pointInput}
+                            placeholder="3"
+                        />
+                    </View>
+                    <View style={styles.pointItem}>
+                        <Ionicons name="ban" size={28} color={COLORS.error} />
+                        <Text style={styles.pointLabel}>Perdedor</Text>
+                        <Input
+                            value={puntos.goles_wo_perdedor}
+                            onChangeText={(v) => updateField(setPuntos, 'goles_wo_perdedor', v)}
+                            keyboardType="numeric"
+                            style={styles.pointInput}
+                            placeholder="0"
                         />
                     </View>
                 </View>
@@ -749,7 +880,7 @@ const CrearTorneoScreen = ({ navigation }) => {
     );
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={handleBack}>
@@ -801,7 +932,7 @@ const CrearTorneoScreen = ({ navigation }) => {
                     )}
                 </View>
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -873,6 +1004,18 @@ const styles = StyleSheet.create({
     vs: { fontSize: 12, color: COLORS.textSecondary, marginHorizontal: 8 },
     errorText: { color: COLORS.error, fontSize: 13, marginBottom: 12 },
     actions: { marginTop: 8 },
+    // Estilos para imagen del torneo
+    inputLabel: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 8, marginTop: 16 },
+    imagenContainer: { marginBottom: 16 },
+    imagenPreviewContainer: { alignItems: 'center' },
+    imagenPreview: { width: 150, height: 150, borderRadius: 12, backgroundColor: COLORS.surfaceVariant },
+    imagenActions: { flexDirection: 'row', marginTop: 12 },
+    cambiarImagenBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: COLORS.primary },
+    cambiarImagenText: { marginLeft: 6, fontSize: 14, fontWeight: '600', color: COLORS.primary },
+    eliminarImagenBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: COLORS.error },
+    eliminarImagenText: { marginLeft: 6, fontSize: 14, fontWeight: '600', color: COLORS.error },
+    imagenPickerBtn: { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceVariant, borderRadius: 12, padding: 24, borderWidth: 2, borderColor: COLORS.border, borderStyle: 'dashed' },
+    imagenPickerText: { marginTop: 8, fontSize: 14, color: COLORS.textSecondary },
 });
 
 export default CrearTorneoScreen;

@@ -3,11 +3,11 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     FlatList,
     RefreshControl,
     TouchableOpacity,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOffline } from '../../contexts/OfflineContext';
@@ -20,6 +20,7 @@ import { COLORS } from '../../utils/constants';
 import { usePartidosRealtime } from '../../hooks/useRealtime';
 
 const HomeScreen = ({ navigation }) => {
+    const insets = useSafeAreaInsets();
     const { isAuthenticated, isGuest, userProfile, isAdmin } = useAuth();
     const { isOnline, pendingSyncCount } = useOffline();
 
@@ -134,7 +135,7 @@ const HomeScreen = ({ navigation }) => {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <FlatList
                 data={torneos}
                 keyExtractor={(item) => item.id}
@@ -162,7 +163,7 @@ const HomeScreen = ({ navigation }) => {
                     />
                 }
             />
-        </SafeAreaView>
+        </View>
     );
 };
 

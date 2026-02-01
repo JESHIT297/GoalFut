@@ -3,7 +3,6 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -11,6 +10,7 @@ import {
     Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button, Input } from '../../components/common';
 import { COLORS } from '../../utils/constants';
@@ -18,6 +18,7 @@ import { isValidEmail } from '../../utils/helpers';
 import { getErrorMessage } from '../../utils/errorHandler';
 
 const LoginScreen = ({ navigation }) => {
+    const insets = useSafeAreaInsets();
     const { signIn, continueAsGuest, loading } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -63,7 +64,7 @@ const LoginScreen = ({ navigation }) => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.keyboardView}
@@ -154,7 +155,7 @@ const LoginScreen = ({ navigation }) => {
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
     );
 };
 

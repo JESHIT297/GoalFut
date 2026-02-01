@@ -85,6 +85,23 @@ const equipoService = {
     },
 
     /**
+     * Buscar equipos por nombre
+     */
+    buscarEquipos: async (query) => {
+        const { data, error } = await supabase
+            .from('equipos')
+            .select(`
+                *,
+                torneo:torneos(id, nombre)
+            `)
+            .ilike('nombre', `%${query}%`)
+            .limit(20);
+
+        if (error) throw error;
+        return data;
+    },
+
+    /**
      * Asignar grupo a un equipo
      */
     asignarGrupo: async (equipoId, grupo) => {

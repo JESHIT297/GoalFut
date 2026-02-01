@@ -23,8 +23,8 @@ const TorneoCard = ({ torneo, onPress }) => {
     return (
         <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
             <View style={styles.header}>
-                {torneo.logo_url ? (
-                    <Image source={{ uri: torneo.logo_url }} style={styles.logo} />
+                {torneo.imagen_url ? (
+                    <Image source={{ uri: torneo.imagen_url }} style={styles.logo} />
                 ) : (
                     <View style={[styles.logoPlaceholder, { backgroundColor: COLORS.primary }]}>
                         <Ionicons name="trophy" size={24} color={COLORS.textOnPrimary} />

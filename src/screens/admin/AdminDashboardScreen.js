@@ -3,13 +3,13 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
     RefreshControl,
     Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOffline } from '../../contexts/OfflineContext';
 import { Loading, Card, Button } from '../../components/common';
@@ -18,6 +18,7 @@ import torneoService from '../../services/torneoService';
 import { COLORS, LIMITS, TOURNAMENT_STATUS } from '../../utils/constants';
 
 const AdminDashboardScreen = ({ navigation }) => {
+    const insets = useSafeAreaInsets();
     const { userProfile, isAdmin, becomeAdmin } = useAuth();
     const { isOnline, pendingSyncCount, processSyncQueue, isSyncing } = useOffline();
 
@@ -121,7 +122,7 @@ const AdminDashboardScreen = ({ navigation }) => {
 
     if (!isAdmin) {
         return (
-            <SafeAreaView style={styles.container}>
+            <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
                 <View style={styles.notAdminContainer}>
                     <Ionicons name="shield-checkmark" size={80} color={COLORS.primary} />
                     <Text style={styles.notAdminTitle}>Panel de Administrador</Text>
@@ -140,7 +141,7 @@ const AdminDashboardScreen = ({ navigation }) => {
                         style={{ marginTop: 12 }}
                     />
                 </View>
-            </SafeAreaView>
+            </View>
         );
     }
 
@@ -154,7 +155,7 @@ const AdminDashboardScreen = ({ navigation }) => {
     );
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 refreshControl={
@@ -276,7 +277,7 @@ const AdminDashboardScreen = ({ navigation }) => {
                     )}
                 </View>
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 };
 

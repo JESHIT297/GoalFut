@@ -3,13 +3,14 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
     RefreshControl,
     Modal,
     FlatList,
+    Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { Loading, Button, Card } from '../../components/common';
@@ -22,6 +23,7 @@ import { formatFullDate, sortByStandings } from '../../utils/helpers';
 import { usePartidosRealtime } from '../../hooks/useRealtime';
 
 const TorneoDetailScreen = ({ route, navigation }) => {
+    const insets = useSafeAreaInsets();
     const { torneoId } = route.params;
     const { userProfile, isAuthenticated, isGuest } = useAuth();
 
@@ -201,9 +203,14 @@ const TorneoDetailScreen = ({ route, navigation }) => {
                                 style={styles.equipoItem}
                                 onPress={() => verJugadores(equipo)}
                             >
-                                <View style={[styles.equipoLogoPlaceholder, { backgroundColor: equipo.color_principal || COLORS.primary }]}>
-                                    <Ionicons name="shield" size={16} color={COLORS.textOnPrimary} />
-                                </View>
+                                {/* Logo del equipo */}
+                                {equipo.logo_url ? (
+                                    <Image source={{ uri: equipo.logo_url }} style={styles.equipoLogoImg} />
+                                ) : (
+                                    <View style={[styles.equipoLogoPlaceholder, { backgroundColor: equipo.color_principal || COLORS.primary }]}>
+                                        <Ionicons name="shield" size={16} color={COLORS.textOnPrimary} />
+                                    </View>
+                                )}
                                 <Text style={styles.equipoNombre}>{equipo.nombre}</Text>
                                 <Ionicons name="chevron-forward" size={16} color={COLORS.textSecondary} />
                             </TouchableOpacity>
@@ -298,7 +305,12 @@ const TorneoDetailScreen = ({ route, navigation }) => {
                 >
                     <Text style={[styles.tablaCell, styles.posCol]}>{index + 1}</Text>
                     <View style={[styles.equipoCol, styles.equipoCellContainer]}>
-                        <View style={[styles.miniLogoPlaceholder, { backgroundColor: equipo.color_principal }]} />
+                        {/* Logo del equipo */}
+                        {equipo.logo_url ? (
+                            <Image source={{ uri: equipo.logo_url }} style={styles.miniLogo} />
+                        ) : (
+                            <View style={[styles.miniLogoPlaceholder, { backgroundColor: equipo.color_principal }]} />
+                        )}
                         <Text style={styles.equipoCellName} numberOfLines={1}>
                             {equipo.nombre_corto || equipo.nombre}
                         </Text>
@@ -341,9 +353,14 @@ const TorneoDetailScreen = ({ route, navigation }) => {
                             <Text style={[styles.vallaRank, index < 3 && styles.vallaRankTop]}>
                                 {index + 1}
                             </Text>
-                            <View style={[styles.vallaColor, { backgroundColor: equipo.color_principal }]}>
-                                <Ionicons name="shield" size={16} color="#fff" />
-                            </View>
+                            {/* Logo del equipo */}
+                            {equipo.logo_url ? (
+                                <Image source={{ uri: equipo.logo_url }} style={styles.vallaLogo} />
+                            ) : (
+                                <View style={[styles.vallaColor, { backgroundColor: equipo.color_principal }]}>
+                                    <Ionicons name="shield" size={16} color="#fff" />
+                                </View>
+                            )}
                             <View style={styles.vallaInfo}>
                                 <Text style={styles.vallaName}>{equipo.nombre}</Text>
                                 <Text style={styles.vallaStats}>{equipo.partidos_jugados || 0} partidos jugados</Text>
@@ -381,6 +398,17 @@ const TorneoDetailScreen = ({ route, navigation }) => {
                             <Text style={[styles.goleadorRank, index < 3 && styles.goleadorRankTop]}>
                                 {index + 1}
                             </Text>
+                            {/* Foto del jugador */}
+                            {jugador.foto_url ? (
+                                <Image
+                                    source={{ uri: jugador.foto_url }}
+                                    style={styles.goleadorPhoto}
+                                />
+                            ) : (
+                                <View style={styles.goleadorPhotoPlaceholder}>
+                                    <Ionicons name="person" size={20} color={COLORS.textLight} />
+                                </View>
+                            )}
                             <View style={styles.goleadorInfo}>
                                 <Text style={styles.goleadorName}>
                                     {jugador.nombre} {jugador.apellido || ''}
@@ -406,18 +434,18 @@ const TorneoDetailScreen = ({ route, navigation }) => {
 
     if (!torneo) {
         return (
-            <SafeAreaView style={styles.container}>
+            <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
                 <View style={styles.errorContainer}>
                     <Ionicons name="alert-circle" size={48} color={COLORS.error} />
                     <Text style={styles.errorText}>No se pudo cargar el torneo</Text>
                     <Button title="Volver" onPress={() => navigation.goBack()} variant="outline" />
                 </View>
-            </SafeAreaView>
+            </View>
         );
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <ScrollView
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
@@ -430,9 +458,14 @@ const TorneoDetailScreen = ({ route, navigation }) => {
                     </TouchableOpacity>
 
                     <View style={styles.torneoHeader}>
-                        <View style={styles.torneoLogoPlaceholder}>
-                            <Ionicons name="trophy" size={40} color={COLORS.primary} />
-                        </View>
+                        {/* Imagen del torneo */}
+                        {torneo.imagen_url ? (
+                            <Image source={{ uri: torneo.imagen_url }} style={styles.torneoLogo} />
+                        ) : (
+                            <View style={styles.torneoLogoPlaceholder}>
+                                <Ionicons name="trophy" size={40} color={COLORS.primary} />
+                            </View>
+                        )}
                         <Text style={styles.torneoNombre}>{torneo.nombre}</Text>
                         <View style={styles.statusBadge}>
                             <Text style={styles.statusText}>
@@ -492,6 +525,14 @@ const TorneoDetailScreen = ({ route, navigation }) => {
                                         <View style={styles.jugadorNumero}>
                                             <Text style={styles.jugadorNumeroText}>{item.numero_camiseta}</Text>
                                         </View>
+                                        {/* Foto del jugador */}
+                                        {item.foto_url ? (
+                                            <Image source={{ uri: item.foto_url }} style={styles.jugadorPhoto} />
+                                        ) : (
+                                            <View style={styles.jugadorPhotoPlaceholder}>
+                                                <Ionicons name="person" size={18} color={COLORS.textLight} />
+                                            </View>
+                                        )}
                                         <View style={styles.jugadorInfo}>
                                             <Text style={styles.jugadorNombre}>
                                                 {item.nombre} {item.apellido || ''}
@@ -511,7 +552,7 @@ const TorneoDetailScreen = ({ route, navigation }) => {
                     </View>
                 </View>
             </Modal>
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -521,6 +562,7 @@ const styles = StyleSheet.create({
     backButton: { marginBottom: 16 },
     torneoHeader: { alignItems: 'center' },
     torneoLogoPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' },
+    torneoLogo: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.background },
     torneoNombre: { fontSize: 24, fontWeight: '700', color: COLORS.textPrimary, marginTop: 12, textAlign: 'center' },
     statusBadge: { backgroundColor: COLORS.primaryLight, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, marginTop: 8 },
     statusText: { fontSize: 12, color: COLORS.primary, fontWeight: '600' },
@@ -543,6 +585,9 @@ const styles = StyleSheet.create({
     equiposList: {},
     equipoItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 10, marginBottom: 8 },
     equipoLogoPlaceholder: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+    equipoLogoImg: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.background },
+    miniLogo: { width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.background },
+    vallaLogo: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.background },
     equipoNombre: { flex: 1, fontSize: 14, color: COLORS.textPrimary, marginLeft: 12, fontWeight: '500' },
     partidosContainer: {},
     grupoSection: { marginBottom: 20 },
@@ -581,6 +626,8 @@ const styles = StyleSheet.create({
     goleadorRow: { flexDirection: 'row', alignItems: 'center' },
     goleadorRank: { fontSize: 16, fontWeight: '600', color: COLORS.textSecondary, width: 28 },
     goleadorRankTop: { color: COLORS.warning, fontWeight: '700' },
+    goleadorPhoto: { width: 40, height: 40, borderRadius: 20, marginRight: 12, backgroundColor: COLORS.background },
+    goleadorPhotoPlaceholder: { width: 40, height: 40, borderRadius: 20, marginRight: 12, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' },
     goleadorInfo: { flex: 1 },
     goleadorName: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary },
     goleadorTeam: { fontSize: 12, color: COLORS.textSecondary },
@@ -599,6 +646,8 @@ const styles = StyleSheet.create({
     jugadorItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.divider },
     jugadorNumero: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
     jugadorNumeroText: { fontSize: 16, fontWeight: '700', color: COLORS.textOnPrimary },
+    jugadorPhoto: { width: 36, height: 36, borderRadius: 18, marginLeft: 8, backgroundColor: COLORS.background },
+    jugadorPhotoPlaceholder: { width: 36, height: 36, borderRadius: 18, marginLeft: 8, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' },
     jugadorInfo: { flex: 1, marginLeft: 12 },
     jugadorNombre: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary },
     jugadorPosicion: { fontSize: 12, color: COLORS.textSecondary },

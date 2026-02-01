@@ -5,7 +5,14 @@
  */
 export const formatDate = (date) => {
     if (!date) return '';
-    const d = new Date(date);
+    // Si es string YYYY-MM-DD, agregar hora para evitar problemas de timezone
+    let d;
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        // Parsear como fecha local, no UTC
+        d = new Date(date + 'T12:00:00');
+    } else {
+        d = new Date(date);
+    }
     return d.toLocaleDateString('es-CO', {
         weekday: 'short',
         day: 'numeric',
@@ -20,7 +27,13 @@ export const formatDate = (date) => {
  */
 export const formatFullDate = (date) => {
     if (!date) return '';
-    const d = new Date(date);
+    // Si es string YYYY-MM-DD, agregar hora para evitar problemas de timezone
+    let d;
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        d = new Date(date + 'T12:00:00');
+    } else {
+        d = new Date(date);
+    }
     return d.toLocaleDateString('es-CO', {
         weekday: 'long',
         day: 'numeric',

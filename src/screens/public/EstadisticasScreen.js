@@ -3,17 +3,19 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     FlatList,
     TouchableOpacity,
     RefreshControl,
+    Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Loading, Card } from '../../components/common';
 import torneoService from '../../services/torneoService';
 import { COLORS } from '../../utils/constants';
 
 const EstadisticasScreen = ({ route, navigation }) => {
+    const insets = useSafeAreaInsets();
     const { torneoId, torneoNombre } = route.params;
     const [activeTab, setActiveTab] = useState('goleadores');
     const [goleadores, setGoleadores] = useState([]);
@@ -81,9 +83,13 @@ const EstadisticasScreen = ({ route, navigation }) => {
                     {index + 1}
                 </Text>
             </View>
-            <View style={[styles.teamBadge, { backgroundColor: item.color_principal || COLORS.primary }]}>
-                <Ionicons name="shield" size={16} color="#fff" />
-            </View>
+            {item.logo_url ? (
+                <Image source={{ uri: item.logo_url }} style={styles.teamLogo} />
+            ) : (
+                <View style={[styles.teamBadge, { backgroundColor: item.color_principal || COLORS.primary }]}>
+                    <Ionicons name="shield" size={16} color="#fff" />
+                </View>
+            )}
             <View style={styles.playerInfo}>
                 <Text style={styles.playerName}>{item.nombre}</Text>
                 <Text style={styles.teamName}>{item.partidos_jugados} PJ</Text>
@@ -102,9 +108,13 @@ const EstadisticasScreen = ({ route, navigation }) => {
                     {index + 1}
                 </Text>
             </View>
-            <View style={[styles.teamBadge, { backgroundColor: item.color_principal || COLORS.primary }]}>
-                <Ionicons name="shield" size={16} color="#fff" />
-            </View>
+            {item.logo_url ? (
+                <Image source={{ uri: item.logo_url }} style={styles.teamLogo} />
+            ) : (
+                <View style={[styles.teamBadge, { backgroundColor: item.color_principal || COLORS.primary }]}>
+                    <Ionicons name="shield" size={16} color="#fff" />
+                </View>
+            )}
             <View style={styles.playerInfo}>
                 <Text style={styles.playerName}>{item.nombre}</Text>
                 <Text style={styles.teamName}>
@@ -195,9 +205,13 @@ const EstadisticasScreen = ({ route, navigation }) => {
                                         {index + 1}
                                     </Text>
                                 </View>
-                                <View style={[styles.teamBadge, { backgroundColor: equipo.color_principal || COLORS.primary }]}>
-                                    <Ionicons name="shield" size={16} color="#fff" />
-                                </View>
+                                {equipo.logo_url ? (
+                                    <Image source={{ uri: equipo.logo_url }} style={styles.teamLogo} />
+                                ) : (
+                                    <View style={[styles.teamBadge, { backgroundColor: equipo.color_principal || COLORS.primary }]}>
+                                        <Ionicons name="shield" size={16} color="#fff" />
+                                    </View>
+                                )}
                                 <View style={styles.playerInfo}>
                                     <Text style={styles.playerName}>{equipo.nombre}</Text>
                                     <Text style={styles.teamName}>
@@ -236,7 +250,7 @@ const EstadisticasScreen = ({ route, navigation }) => {
     // Para Posiciones, usamos renderizado especial con grupos
     if (activeTab === 'tabla') {
         return (
-            <SafeAreaView style={styles.container}>
+            <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={() => navigation.goBack()}>
                         <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
@@ -266,7 +280,7 @@ const EstadisticasScreen = ({ route, navigation }) => {
                     ))}
                 </View>
                 {renderPosicionesConGrupos()}
-            </SafeAreaView>
+            </View>
         );
     }
 
@@ -293,7 +307,7 @@ const EstadisticasScreen = ({ route, navigation }) => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -342,7 +356,7 @@ const EstadisticasScreen = ({ route, navigation }) => {
                     </View>
                 }
             />
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -448,6 +462,13 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
+    },
+    teamLogo: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        marginRight: 12,
+        backgroundColor: COLORS.background,
     },
     playerInfo: {
         flex: 1,

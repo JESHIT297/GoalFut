@@ -3,12 +3,13 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
     Alert,
     Platform,
+    Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Button, Input, Loading, Card } from '../../components/common';
@@ -17,6 +18,7 @@ import { getErrorMessage } from '../../utils/errorHandler';
 import { COLORS, MATCH_STATUS } from '../../utils/constants';
 
 const EditarPartidoScreen = ({ route, navigation }) => {
+    const insets = useSafeAreaInsets();
     const { partidoId } = route.params;
     const [partido, setPartido] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -115,14 +117,14 @@ const EditarPartidoScreen = ({ route, navigation }) => {
 
     if (!partido) {
         return (
-            <SafeAreaView style={styles.container}>
+            <View style={[styles.container, { paddingTop: insets.top }]}>
                 <Text style={styles.errorText}>No se encontró el partido</Text>
-            </SafeAreaView>
+            </View>
         );
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()}>
                     <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
@@ -136,16 +138,24 @@ const EditarPartidoScreen = ({ route, navigation }) => {
                 <Card style={styles.matchCard}>
                     <View style={styles.teamsRow}>
                         <View style={styles.team}>
-                            <View style={[styles.teamBadge, { backgroundColor: partido.equipo_local?.color_principal || COLORS.primary }]}>
-                                <Ionicons name="shield" size={20} color="#fff" />
-                            </View>
+                            {partido.equipo_local?.logo_url ? (
+                                <Image source={{ uri: partido.equipo_local.logo_url }} style={styles.teamLogo} />
+                            ) : (
+                                <View style={[styles.teamBadge, { backgroundColor: partido.equipo_local?.color_principal || COLORS.primary }]}>
+                                    <Ionicons name="shield" size={20} color="#fff" />
+                                </View>
+                            )}
                             <Text style={styles.teamName}>{partido.equipo_local?.nombre_corto || 'Local'}</Text>
                         </View>
                         <Text style={styles.vsText}>VS</Text>
                         <View style={styles.team}>
-                            <View style={[styles.teamBadge, { backgroundColor: partido.equipo_visitante?.color_principal || COLORS.secondary }]}>
-                                <Ionicons name="shield" size={20} color="#fff" />
-                            </View>
+                            {partido.equipo_visitante?.logo_url ? (
+                                <Image source={{ uri: partido.equipo_visitante.logo_url }} style={styles.teamLogo} />
+                            ) : (
+                                <View style={[styles.teamBadge, { backgroundColor: partido.equipo_visitante?.color_principal || COLORS.secondary }]}>
+                                    <Ionicons name="shield" size={20} color="#fff" />
+                                </View>
+                            )}
                             <Text style={styles.teamName}>{partido.equipo_visitante?.nombre_corto || 'Visitante'}</Text>
                         </View>
                     </View>
@@ -204,7 +214,7 @@ const EditarPartidoScreen = ({ route, navigation }) => {
                     style={styles.saveButton}
                 />
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -217,6 +227,7 @@ const styles = StyleSheet.create({
     teamsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
     team: { alignItems: 'center' },
     teamBadge: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+    teamLogo: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.background },
     teamName: { marginTop: 8, fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
     vsText: { fontSize: 18, fontWeight: '700', color: COLORS.textSecondary },
     label: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 8, marginTop: 16 },

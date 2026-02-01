@@ -3,7 +3,6 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     FlatList,
     TouchableOpacity,
     Modal,
@@ -11,6 +10,7 @@ import {
     RefreshControl,
     Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input, Card, Loading, EmptyState } from '../../components/common';
 import jugadorService from '../../services/jugadorService';
@@ -19,6 +19,7 @@ import imageService from '../../services/imageService';
 import { COLORS, PLAYER_POSITIONS } from '../../utils/constants';
 
 const GestionarJugadoresScreen = ({ route, navigation }) => {
+    const insets = useSafeAreaInsets();
     const { equipoId, equipoNombre, torneoId } = route.params;
     const [jugadores, setJugadores] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -34,7 +35,7 @@ const GestionarJugadoresScreen = ({ route, navigation }) => {
         nombre: '',
         apellido: '',
         numero_camiseta: '',
-        posicion: 'ala',
+        posicion: 'mediocampista',
     });
     const [fotoUri, setFotoUri] = useState(null);
     const [errors, setErrors] = useState({});
@@ -240,6 +241,14 @@ const GestionarJugadoresScreen = ({ route, navigation }) => {
                 <View style={styles.numeroContainer}>
                     <Text style={styles.numero}>{item.numero_camiseta}</Text>
                 </View>
+                {/* Foto del jugador */}
+                {item.foto_url ? (
+                    <Image source={{ uri: item.foto_url }} style={styles.jugadorPhoto} />
+                ) : (
+                    <View style={styles.jugadorPhotoPlaceholder}>
+                        <Ionicons name="person" size={18} color={COLORS.textLight} />
+                    </View>
+                )}
                 <View style={styles.jugadorInfo}>
                     <View style={styles.nombreRow}>
                         <Text style={styles.nombre}>
@@ -298,7 +307,7 @@ const GestionarJugadoresScreen = ({ route, navigation }) => {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()}>
                     <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
@@ -346,7 +355,7 @@ const GestionarJugadoresScreen = ({ route, navigation }) => {
             />
 
             {canAddMore && jugadores.length > 0 && (
-                <TouchableOpacity style={styles.fab} onPress={() => openModal()}>
+                <TouchableOpacity style={[styles.fab, { bottom: 20 + insets.bottom }]} onPress={() => openModal()}>
                     <Ionicons name="add" size={28} color={COLORS.textOnPrimary} />
                 </TouchableOpacity>
             )}
@@ -393,6 +402,48 @@ const GestionarJugadoresScreen = ({ route, navigation }) => {
                                 </View>
                             )}
                         </TouchableOpacity>
+                        {/* Botón para eliminar foto */}
+                        {(fotoUri || editingJugador?.foto_url) && (
+                            <TouchableOpacity
+                                style={styles.deletePhotoBtn}
+                                onPress={() => {
+                                    Alert.alert(
+                                        'Eliminar Foto',
+                                        '¿Estás seguro de que deseas eliminar la foto?',
+                                        [
+                                            { text: 'Cancelar', style: 'cancel' },
+                                            {
+                                                text: 'Eliminar',
+                                                style: 'destructive',
+                                                onPress: async () => {
+                                                    setFotoUri(null);
+                                                    if (editingJugador?.id && editingJugador?.foto_url) {
+                                                        try {
+                                                            // Eliminar del storage
+                                                            await imageService.deleteImage(editingJugador.foto_url);
+                                                            // Actualizar en BD
+                                                            await jugadorService.actualizarJugador(editingJugador.id, { foto_url: null });
+                                                            setEditingJugador({ ...editingJugador, foto_url: null });
+                                                            loadJugadores();
+                                                            Alert.alert('Éxito', 'Foto eliminada correctamente');
+                                                        } catch (err) {
+                                                            console.error('Error deleting photo:', err);
+                                                            Alert.alert('Error', 'No se pudo eliminar la foto');
+                                                        }
+                                                    } else {
+                                                        // Solo se está eliminando la preview local
+                                                        setFotoUri(null);
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    );
+                                }}
+                            >
+                                <Ionicons name="trash" size={16} color={COLORS.error} />
+                                <Text style={styles.deletePhotoText}>Eliminar foto</Text>
+                            </TouchableOpacity>
+                        )}
 
                         <View style={styles.formRow}>
                             <View style={{ flex: 2, marginRight: 8 }}>
@@ -451,7 +502,7 @@ const GestionarJugadoresScreen = ({ route, navigation }) => {
                             </View>
                         </View>
 
-                        <View style={styles.modalActions}>
+                        <View style={[styles.modalActions, { paddingBottom: insets.bottom }]}>
                             <Button
                                 title="Cancelar"
                                 onPress={closeModal}
@@ -468,7 +519,7 @@ const GestionarJugadoresScreen = ({ route, navigation }) => {
                     </View>
                 </View>
             </Modal>
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -487,6 +538,8 @@ const styles = StyleSheet.create({
     jugadorHeader: { flexDirection: 'row', alignItems: 'center' },
     numeroContainer: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
     numero: { fontSize: 18, fontWeight: '700', color: COLORS.textOnPrimary },
+    jugadorPhoto: { width: 40, height: 40, borderRadius: 20, marginLeft: 10, backgroundColor: COLORS.background },
+    jugadorPhotoPlaceholder: { width: 40, height: 40, borderRadius: 20, marginLeft: 10, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' },
     jugadorInfo: { flex: 1, marginLeft: 12 },
     nombreRow: { flexDirection: 'row', alignItems: 'center' },
     nombre: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
@@ -539,6 +592,18 @@ const styles = StyleSheet.create({
         fontSize: 10,
         color: COLORS.textSecondary,
         marginTop: 2,
+    },
+    deletePhotoBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 8,
+        padding: 6,
+    },
+    deletePhotoText: {
+        fontSize: 12,
+        color: COLORS.error,
+        marginLeft: 4,
     },
 });
 

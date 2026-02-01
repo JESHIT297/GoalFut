@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
     RefreshControl,
     Alert,
+    Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { Loading, Card, Button } from '../../components/common';
@@ -19,6 +21,7 @@ import { formatDate } from '../../utils/helpers';
 import { useRealtimeSubscription, useEventosRealtime } from '../../hooks/useRealtime';
 
 const PartidoDetailScreen = ({ route, navigation }) => {
+    const insets = useSafeAreaInsets();
     const { partidoId, fromAdmin = false } = route.params; // fromAdmin indica si viene del panel admin
     const { isAdmin, userProfile } = useAuth();
 
@@ -44,6 +47,13 @@ const PartidoDetailScreen = ({ route, navigation }) => {
     useEffect(() => {
         loadPartido();
     }, [loadPartido]);
+
+    // Recargar datos cuando la pantalla obtiene el foco (para sincronizar eventos eliminados)
+    useFocusEffect(
+        useCallback(() => {
+            loadPartido();
+        }, [loadPartido])
+    );
 
     // Cargar estado de seguimiento de equipos
     useEffect(() => {
@@ -91,6 +101,7 @@ const PartidoDetailScreen = ({ route, navigation }) => {
 
     // Suscripción a cambios del partido en tiempo real
     useRealtimeSubscription('partidos', (payload) => {
+        console.log('Realtime partido update:', payload.eventType);
         if (payload.new?.id === partidoId || payload.old?.id === partidoId) {
             loadPartido();
         }
@@ -98,8 +109,21 @@ const PartidoDetailScreen = ({ route, navigation }) => {
 
     // Suscripción a eventos del partido en tiempo real
     useEventosRealtime(partidoId, (payload) => {
+        console.log('Realtime evento update:', payload.eventType, payload);
         loadPartido();
     });
+
+    // Auto-refresh cada 10 segundos para partidos en vivo (respaldo a realtime)
+    useEffect(() => {
+        if (partido?.estado === MATCH_STATUS.EN_JUEGO ||
+            partido?.estado === MATCH_STATUS.PAUSADO ||
+            partido?.estado === MATCH_STATUS.MEDIO_TIEMPO) {
+            const interval = setInterval(() => {
+                loadPartido();
+            }, 10000); // 10 segundos
+            return () => clearInterval(interval);
+        }
+    }, [partido?.estado, loadPartido]);
 
     // Solo mostrar controles admin si viene del panel admin
     const showAdminControls = fromAdmin && isAdmin && partido?.torneo?.admin_id === userProfile?.id;
@@ -170,14 +194,34 @@ const PartidoDetailScreen = ({ route, navigation }) => {
 
     const renderResumen = () => {
         const eventos = partido?.eventos || [];
-        const golesLocal = eventos.filter(e =>
-            (e.tipo === EVENT_TYPES.GOL || e.tipo === EVENT_TYPES.GOL_PENAL) &&
-            e.equipo_id === partido.equipo_local_id
-        );
-        const golesVisitante = eventos.filter(e =>
-            (e.tipo === EVENT_TYPES.GOL || e.tipo === EVENT_TYPES.GOL_PENAL) &&
-            e.equipo_id === partido.equipo_visitante_id
-        );
+
+        // Goles del equipo local:
+        // - Goles normales donde equipo_id es local
+        // - Autogoles donde equipo_id es visitante (autogol del visitante cuenta para local)
+        const golesLocal = eventos.filter(e => {
+            if (e.tipo === EVENT_TYPES.GOL || e.tipo === EVENT_TYPES.GOL_PENAL) {
+                return e.equipo_id === partido.equipo_local_id;
+            }
+            if (e.tipo === EVENT_TYPES.AUTOGOL) {
+                // Autogol del visitante cuenta para el local
+                return e.equipo_id === partido.equipo_visitante_id;
+            }
+            return false;
+        });
+
+        // Goles del equipo visitante:
+        // - Goles normales donde equipo_id es visitante
+        // - Autogoles donde equipo_id es local (autogol del local cuenta para visitante)
+        const golesVisitante = eventos.filter(e => {
+            if (e.tipo === EVENT_TYPES.GOL || e.tipo === EVENT_TYPES.GOL_PENAL) {
+                return e.equipo_id === partido.equipo_visitante_id;
+            }
+            if (e.tipo === EVENT_TYPES.AUTOGOL) {
+                // Autogol del local cuenta para el visitante
+                return e.equipo_id === partido.equipo_local_id;
+            }
+            return false;
+        });
 
         return (
             <View>
@@ -185,24 +229,45 @@ const PartidoDetailScreen = ({ route, navigation }) => {
                 <Card style={styles.scoreCard}>
                     <View style={styles.scoreContainer}>
                         <View style={styles.teamScore}>
-                            <View style={[styles.teamBadge, { backgroundColor: partido.equipo_local?.color_principal || COLORS.primary }]}>
-                                <Ionicons name="shield" size={24} color="#fff" />
-                            </View>
+                            {/* Logo equipo local */}
+                            {partido.equipo_local?.logo_url ? (
+                                <Image source={{ uri: partido.equipo_local.logo_url }} style={styles.teamLogo} />
+                            ) : (
+                                <View style={[styles.teamBadge, { backgroundColor: partido.equipo_local?.color_principal || COLORS.primary }]}>
+                                    <Ionicons name="shield" size={24} color="#fff" />
+                                </View>
+                            )}
                             <Text style={styles.teamName} numberOfLines={2}>
                                 {partido.equipo_local?.nombre || 'Local'}
                             </Text>
                         </View>
 
-                        <View style={styles.scores}>
-                            <Text style={styles.scoreValue}>{partido.goles_local || 0}</Text>
-                            <Text style={styles.scoreSeparator}>-</Text>
-                            <Text style={styles.scoreValue}>{partido.goles_visitante || 0}</Text>
+                        <View style={styles.scoresCenter}>
+                            <View style={styles.scores}>
+                                <Text style={styles.scoreValue}>{partido.goles_local || 0}</Text>
+                                <Text style={styles.scoreSeparator}>-</Text>
+                                <Text style={styles.scoreValue}>{partido.goles_visitante || 0}</Text>
+                            </View>
+
+                            {/* Mostrar penales si existen */}
+                            {partido.penales_local != null && partido.penales_visitante != null && (
+                                <View style={styles.penalesContainer}>
+                                    <Text style={styles.penalesScore}>({partido.penales_local})</Text>
+                                    <Text style={styles.penalesSeparator}>-</Text>
+                                    <Text style={styles.penalesScore}>({partido.penales_visitante})</Text>
+                                </View>
+                            )}
                         </View>
 
                         <View style={styles.teamScore}>
-                            <View style={[styles.teamBadge, { backgroundColor: partido.equipo_visitante?.color_principal || COLORS.secondary }]}>
-                                <Ionicons name="shield" size={24} color="#fff" />
-                            </View>
+                            {/* Logo equipo visitante */}
+                            {partido.equipo_visitante?.logo_url ? (
+                                <Image source={{ uri: partido.equipo_visitante.logo_url }} style={styles.teamLogo} />
+                            ) : (
+                                <View style={[styles.teamBadge, { backgroundColor: partido.equipo_visitante?.color_principal || COLORS.secondary }]}>
+                                    <Ionicons name="shield" size={24} color="#fff" />
+                                </View>
+                            )}
                             <Text style={styles.teamName} numberOfLines={2}>
                                 {partido.equipo_visitante?.nombre || 'Visitante'}
                             </Text>
@@ -260,8 +325,13 @@ const PartidoDetailScreen = ({ route, navigation }) => {
                                 </Text>
                             </View>
 
-                            {/* Lista de eventos ordenados por minuto */}
-                            {eventos.sort((a, b) => (a.minuto || 0) - (b.minuto || 0)).map((evento, index) => {
+                            {/* Lista de eventos ordenados: más recientes primero */}
+                            {eventos.sort((a, b) => {
+                                // Primero por tiempo (2T antes que 1T)
+                                if ((b.tiempo || 1) !== (a.tiempo || 1)) return (b.tiempo || 1) - (a.tiempo || 1);
+                                // Luego por minuto descendente
+                                return (b.minuto || 0) - (a.minuto || 0);
+                            }).map((evento, index) => {
                                 const icon = getEventIcon(evento.tipo);
                                 const esLocal = evento.equipo_id === partido.equipo_local_id;
 
@@ -282,7 +352,7 @@ const PartidoDetailScreen = ({ route, navigation }) => {
                                         {/* Columna central - Minuto */}
                                         <View style={styles.eventTimeColumn}>
                                             <Text style={styles.eventMinuteCenter}>
-                                                {evento.minuto ? `${evento.minuto}'` : '-'}
+                                                {evento.minuto ? `${evento.minuto}' (${evento.tiempo === 2 ? '2T' : '1T'})` : '-'}
                                             </Text>
                                         </View>
 
@@ -334,7 +404,12 @@ const PartidoDetailScreen = ({ route, navigation }) => {
             <View>
                 <View style={[styles.teamHeader, { backgroundColor: equipo?.color_principal || COLORS.primary }]}>
                     <View style={styles.teamHeaderInfo}>
-                        <Ionicons name="shield" size={24} color="#fff" />
+                        {/* Logo del equipo */}
+                        {equipo?.logo_url ? (
+                            <Image source={{ uri: equipo.logo_url }} style={styles.teamHeaderLogo} />
+                        ) : (
+                            <Ionicons name="shield" size={24} color="#fff" />
+                        )}
                         <Text style={styles.teamHeaderText}>{equipo?.nombre || 'Equipo'}</Text>
                     </View>
                     <TouchableOpacity
@@ -365,6 +440,14 @@ const PartidoDetailScreen = ({ route, navigation }) => {
                                     <View style={styles.playerNumber}>
                                         <Text style={styles.playerNumberText}>{jugador.numero_camiseta}</Text>
                                     </View>
+                                    {/* Foto del jugador */}
+                                    {jugador.foto_url ? (
+                                        <Image source={{ uri: jugador.foto_url }} style={styles.playerPhoto} />
+                                    ) : (
+                                        <View style={styles.playerPhotoPlaceholder}>
+                                            <Ionicons name="person" size={18} color={COLORS.textLight} />
+                                        </View>
+                                    )}
                                     <View style={styles.playerInfo}>
                                         <Text style={styles.playerName}>
                                             {jugador.nombre} {jugador.apellido || ''}
@@ -405,18 +488,18 @@ const PartidoDetailScreen = ({ route, navigation }) => {
 
     if (!partido) {
         return (
-            <SafeAreaView style={styles.container}>
+            <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
                 <View style={styles.errorContainer}>
                     <Ionicons name="alert-circle" size={48} color={COLORS.error} />
                     <Text style={styles.errorText}>No se pudo cargar el partido</Text>
                     <Button title="Volver" onPress={() => navigation.goBack()} variant="outline" />
                 </View>
-            </SafeAreaView>
+            </View>
         );
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <ScrollView
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
@@ -474,7 +557,7 @@ const PartidoDetailScreen = ({ route, navigation }) => {
                     {activeTab === 'visitante' && renderJugadores(partido.equipo_visitante, partido.equipo_visitante?.jugadores, false)}
                 </View>
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -494,6 +577,7 @@ const styles = StyleSheet.create({
     scoreContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     teamScore: { flex: 1, alignItems: 'center' },
     teamBadge: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+    teamLogo: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.background },
     teamName: { fontSize: 13, color: COLORS.textPrimary, textAlign: 'center', marginTop: 8, fontWeight: '600' },
     scores: { flexDirection: 'row', alignItems: 'center' },
     scoreValue: { fontSize: 40, fontWeight: '700', color: COLORS.textPrimary },
@@ -520,6 +604,8 @@ const styles = StyleSheet.create({
     playerRow: { flexDirection: 'row', alignItems: 'center' },
     playerNumber: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
     playerNumberText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+    playerPhoto: { width: 36, height: 36, borderRadius: 18, marginLeft: 8, backgroundColor: COLORS.background },
+    playerPhotoPlaceholder: { width: 36, height: 36, borderRadius: 18, marginLeft: 8, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' },
     playerInfo: { flex: 1, marginLeft: 12 },
     playerName: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary },
     playerPosition: { fontSize: 12, color: COLORS.textSecondary },
@@ -544,9 +630,41 @@ const styles = StyleSheet.create({
     eventMinuteCenter: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, backgroundColor: COLORS.surfaceVariant, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
     // Estilos para botón de seguir equipo
     teamHeaderInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+    teamHeaderLogo: { width: 28, height: 28, borderRadius: 14 },
     followBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
     followBtnActive: { backgroundColor: 'rgba(255,255,255,0.9)' },
     followBtnText: { color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 4 },
+    // Penalty shootout styles
+    scoresCenter: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    penalesContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 6,
+    },
+    penalesScore: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: COLORS.primary,
+    },
+    penalesLabelBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.warning + '20',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 10,
+        marginHorizontal: 8,
+    },
+    penalesLabelText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: COLORS.warning,
+        marginLeft: 4,
+    },
 });
 
 export default PartidoDetailScreen;

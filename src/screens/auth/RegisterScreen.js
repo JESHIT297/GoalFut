@@ -3,13 +3,13 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
     TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button, Input } from '../../components/common';
 import { COLORS } from '../../utils/constants';
@@ -17,6 +17,7 @@ import { isValidEmail } from '../../utils/helpers';
 import { getErrorMessage } from '../../utils/errorHandler';
 
 const RegisterScreen = ({ navigation }) => {
+    const insets = useSafeAreaInsets();
     const { signUp, loading } = useAuth();
     const [formData, setFormData] = useState({
         nombre: '',
@@ -80,7 +81,7 @@ const RegisterScreen = ({ navigation }) => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.keyboardView}
@@ -190,7 +191,7 @@ const RegisterScreen = ({ navigation }) => {
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
     );
 };
 

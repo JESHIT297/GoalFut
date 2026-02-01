@@ -101,20 +101,20 @@ export const EVENT_TYPE_LABELS = {
     sustitucion: '🔄 Sustitución',
 };
 
-// Posiciones de jugadores (fútbol de salón)
+// Posiciones de jugadores (compatible con base de datos)
 export const PLAYER_POSITIONS = [
     { value: 'portero', label: 'Portero', short: 'POR' },
-    { value: 'cierre', label: 'Cierre', short: 'CIE' },
-    { value: 'ala', label: 'Ala', short: 'ALA' },
-    { value: 'pivot', label: 'Pivot', short: 'PIV' },
+    { value: 'defensa', label: 'Defensa', short: 'DEF' },
+    { value: 'mediocampista', label: 'Mediocampista', short: 'MED' },
+    { value: 'delantero', label: 'Delantero', short: 'DEL' },
     { value: 'universal', label: 'Universal', short: 'UNI' },
 ];
 
 export const PLAYER_POSITION_LABELS = {
     portero: 'Portero',
-    cierre: 'Cierre',
-    ala: 'Ala',
-    pivot: 'Pivot',
+    defensa: 'Defensa',
+    mediocampista: 'Mediocampista',
+    delantero: 'Delantero',
     universal: 'Universal',
 };
 

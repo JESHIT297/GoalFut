@@ -4,6 +4,8 @@
  */
 
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 import { supabase } from '../config/supabase';
 import { getErrorMessage } from '../utils/errorHandler';
 
@@ -29,10 +31,12 @@ export const pickImage = async () => {
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'],
             allowsEditing: true,
             aspect: [1, 1],
-            quality: 0.7,
+            quality: 0.3, // Reducido para subidas más rápidas en túnel
+            // Limitar tamaño máximo para evitar timeouts
+            exif: false,
         });
 
         if (result.canceled) return null;
@@ -45,42 +49,107 @@ export const pickImage = async () => {
 };
 
 /**
- * Sube una imagen a Supabase Storage
+ * Sube una imagen a Supabase Storage con reintentos
+ * Usa base64 para mejor compatibilidad con túnel de Expo
  * @param {string} uri - URI local de la imagen
  * @param {string} folder - Carpeta destino (equipos, jugadores, etc.)
  * @param {string} fileName - Nombre del archivo
+ * @param {number} retries - Número de reintentos (default: 2)
  * @returns {Promise<string>} URL pública de la imagen
  */
-export const uploadImage = async (uri, folder, fileName) => {
-    try {
-        // Obtener el archivo como blob
-        const response = await fetch(uri);
-        const blob = await response.blob();
+export const uploadImage = async (uri, folder, fileName, retries = 2) => {
+    let lastError = null;
 
-        // Generar nombre único
-        const fileExt = uri.split('.').pop() || 'jpg';
-        const uniqueName = `${folder}/${fileName}_${Date.now()}.${fileExt}`;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            // Leer archivo como base64
+            let base64Data;
+            try {
+                base64Data = await FileSystem.readAsStringAsync(uri, {
+                    encoding: 'base64',
+                });
+            } catch (readError) {
+                console.error('Error reading image:', readError);
+                throw new Error('No se pudo leer la imagen seleccionada');
+            }
 
-        // Subir a Supabase Storage
-        const { data, error } = await supabase.storage
-            .from(BUCKET_NAME)
-            .upload(uniqueName, blob, {
-                contentType: `image/${fileExt}`,
-                upsert: true,
-            });
+            // Verificar tamaño aproximado (base64 es ~33% más grande)
+            const estimatedSize = (base64Data.length * 3) / 4;
+            const maxSize = 5 * 1024 * 1024; // 5MB
+            if (estimatedSize > maxSize) {
+                throw new Error('La imagen es muy grande. El tamaño máximo es 5MB');
+            }
 
-        if (error) throw error;
+            // Generar nombre único
+            const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
+            const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            const extension = validExtensions.includes(fileExt) ? fileExt : 'jpg';
+            const uniqueName = `${folder}/${fileName}_${Date.now()}.${extension}`;
 
-        // Obtener URL pública
-        const { data: urlData } = supabase.storage
-            .from(BUCKET_NAME)
-            .getPublicUrl(data.path);
+            // Convertir base64 a ArrayBuffer
+            const arrayBuffer = decode(base64Data);
 
-        return urlData.publicUrl;
-    } catch (error) {
-        console.error('Error uploading image:', error);
-        throw new Error(getErrorMessage(error));
+            // Subir a Supabase Storage
+            const { data, error } = await supabase.storage
+                .from(BUCKET_NAME)
+                .upload(uniqueName, arrayBuffer, {
+                    contentType: `image/${extension}`,
+                    upsert: true,
+                });
+
+            if (error) {
+                console.error(`Supabase upload error (attempt ${attempt + 1}):`, error);
+
+                // Errores que no vale la pena reintentar
+                if (error.message?.includes('bucket') || error.statusCode === 404) {
+                    throw new Error('El almacenamiento de imágenes no está configurado. Contacta al administrador');
+                }
+                if (error.message?.includes('policy') || error.statusCode === 403) {
+                    throw new Error('No tienes permisos para subir imágenes');
+                }
+
+                // Guardar error para posible reintento
+                lastError = error;
+
+                // Si aún quedan reintentos, esperar y continuar
+                if (attempt < retries) {
+                    await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+                    continue;
+                }
+
+                throw new Error('Error al subir la imagen después de varios intentos');
+            }
+
+            // Obtener URL pública
+            const { data: urlData } = supabase.storage
+                .from(BUCKET_NAME)
+                .getPublicUrl(data.path);
+
+            return urlData.publicUrl;
+
+        } catch (error) {
+            lastError = error;
+
+            // Si es un error de validación, no reintentar
+            if (error.message?.includes('máximo') || error.message?.includes('leer')) {
+                throw error;
+            }
+
+            // Si aún quedan reintentos para errores de red
+            if (attempt < retries) {
+                console.log(`Reintentando subida (intento ${attempt + 2}/${retries + 1})...`);
+                await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+                continue;
+            }
+        }
     }
+
+    // Si llegamos aquí, todos los reintentos fallaron
+    console.error('Error uploading image after all retries:', lastError);
+    if (lastError?.message && !lastError.message.includes('StorageUnknownError')) {
+        throw lastError;
+    }
+    throw new Error('Error de conexión. Verifica tu internet e intenta de nuevo');
 };
 
 /**

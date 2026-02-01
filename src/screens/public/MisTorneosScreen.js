@@ -3,12 +3,12 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     FlatList,
     TouchableOpacity,
     RefreshControl,
     Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../contexts/AuthContext';
@@ -19,6 +19,7 @@ import torneoService from '../../services/torneoService';
 import { COLORS, CACHE_KEYS } from '../../utils/constants';
 
 const MisTorneosScreen = ({ navigation }) => {
+    const insets = useSafeAreaInsets();
     const { userProfile, isGuest } = useAuth();
     const { isOnline } = useOffline();
     const [torneos, setTorneos] = useState([]);
@@ -136,12 +137,44 @@ const MisTorneosScreen = ({ navigation }) => {
         </View>
     );
 
+    // Si es invitado, mostrar pantalla de registro/login
+    if (isGuest) {
+        return (
+            <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+                <View style={styles.header}>
+                    <Text style={styles.headerTitle}>Mis Torneos</Text>
+                </View>
+                <View style={styles.guestContainer}>
+                    <Ionicons name="heart" size={80} color={COLORS.primary} />
+                    <Text style={styles.guestTitle}>Sigue tus torneos favoritos</Text>
+                    <Text style={styles.guestMessage}>
+                        Inicia sesión o regístrate para seguir torneos y recibir actualizaciones en tiempo real
+                    </Text>
+                    <View style={styles.guestButtons}>
+                        <TouchableOpacity
+                            style={styles.loginButton}
+                            onPress={() => navigation.navigate('Login')}
+                        >
+                            <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.registerButton}
+                            onPress={() => navigation.navigate('Register')}
+                        >
+                            <Text style={styles.registerButtonText}>Registrarse</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        );
+    }
+
     if (loading) {
         return <Loading message="Cargando torneos..." />;
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             {/* Header */}
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>Mis Torneos</Text>
@@ -185,7 +218,7 @@ const MisTorneosScreen = ({ navigation }) => {
                     ) : null
                 }
             />
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -261,6 +294,56 @@ const styles = StyleSheet.create({
         color: COLORS.primary,
         marginLeft: 4,
         fontWeight: '500',
+    },
+    // Guest styles
+    guestContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 32,
+    },
+    guestTitle: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+        marginTop: 20,
+        textAlign: 'center',
+    },
+    guestMessage: {
+        fontSize: 15,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
+        marginTop: 12,
+        lineHeight: 22,
+    },
+    guestButtons: {
+        marginTop: 32,
+        width: '100%',
+        gap: 12,
+    },
+    loginButton: {
+        backgroundColor: COLORS.primary,
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    loginButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    registerButton: {
+        backgroundColor: 'transparent',
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: COLORS.primary,
+    },
+    registerButtonText: {
+        color: COLORS.primary,
+        fontSize: 16,
+        fontWeight: '600',
     },
 });
 

@@ -19,12 +19,14 @@ import TorneoDetailScreen from '../screens/public/TorneoDetailScreen';
 import PartidoDetailScreen from '../screens/public/PartidoDetailScreen';
 import EstadisticasScreen from '../screens/public/EstadisticasScreen';
 import MisTorneosScreen from '../screens/public/MisTorneosScreen';
+import BuscarScreen from '../screens/public/BuscarScreen';
 
 // Admin Screens
 import AdminDashboardScreen from '../screens/admin/AdminDashboardScreen';
 import CrearTorneoScreen from '../screens/admin/CrearTorneoScreen';
 import EditarTorneoScreen from '../screens/admin/EditarTorneoScreen';
 import EditarPartidoScreen from '../screens/admin/EditarPartidoScreen';
+import CrearPartidoScreen from '../screens/admin/CrearPartidoScreen';
 import PartidoEnVivoScreen from '../screens/admin/PartidoEnVivoScreen';
 import GestionarEquiposScreen from '../screens/admin/GestionarEquiposScreen';
 import GestionarJugadoresScreen from '../screens/admin/GestionarJugadoresScreen';
@@ -41,23 +43,13 @@ const AuthStack = () => (
 );
 
 // MisTorneosScreen ahora se importa desde screens/public
-
-
-// Pantalla placeholder para Buscar
-const BuscarScreen = () => {
-    const { EmptyState } = require('../components/common');
-    return (
-        <EmptyState
-            icon="search-outline"
-            title="Buscar"
-            message="Busca torneos, equipos y jugadores"
-        />
-    );
-};
+// BuscarScreen ahora se importa desde screens/public
 
 // Pantalla placeholder para Perfil
 const ProfileScreen = ({ navigation }) => {
-    const { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Alert } = require('react-native');
+    const { View, Text, StyleSheet, TouchableOpacity, Alert } = require('react-native');
+    const { useSafeAreaInsets } = require('react-native-safe-area-context');
+    const insets = useSafeAreaInsets();
     const { useAuth } = require('../contexts/AuthContext');
     const { Button } = require('../components/common');
 
@@ -89,7 +81,7 @@ const ProfileScreen = ({ navigation }) => {
     };
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <View style={{ flex: 1, backgroundColor: COLORS.background, paddingTop: insets.top, paddingBottom: insets.bottom }}>
             <View style={{ flex: 1, padding: 24, justifyContent: 'center', alignItems: 'center' }}>
                 <View style={{
                     width: 100,
@@ -161,68 +153,76 @@ const ProfileScreen = ({ navigation }) => {
                     )}
                 </View>
             </View>
-        </SafeAreaView>
+        </View>
     );
 };
 
 
-// Tab Navigator principal
-const MainTabs = () => (
-    <Tab.Navigator
-        screenOptions={({ route }) => ({
-            tabBarIcon: ({ focused, color, size }) => {
-                let iconName;
+// Tab Navigator principal con insets
+const MainTabs = () => {
+    const { useSafeAreaInsets } = require('react-native-safe-area-context');
+    const insets = useSafeAreaInsets();
 
-                switch (route.name) {
-                    case 'Inicio':
-                        iconName = focused ? 'home' : 'home-outline';
-                        break;
-                    case 'MisTorneos':
-                        iconName = focused ? 'heart' : 'heart-outline';
-                        break;
-                    case 'Buscar':
-                        iconName = focused ? 'search' : 'search-outline';
-                        break;
-                    case 'Perfil':
-                        iconName = focused ? 'person' : 'person-outline';
-                        break;
-                    default:
-                        iconName = 'ellipse';
-                }
+    return (
+        <Tab.Navigator
+            screenOptions={({ route }) => ({
+                tabBarIcon: ({ focused, color, size }) => {
+                    let iconName;
 
-                return <Ionicons name={iconName} size={size} color={color} />;
-            },
-            tabBarActiveTintColor: COLORS.primary,
-            tabBarInactiveTintColor: COLORS.textSecondary,
-            headerShown: false,
-            tabBarStyle: {
-                backgroundColor: COLORS.surface,
-                borderTopWidth: 1,
-                borderTopColor: COLORS.divider,
-                paddingBottom: Platform.OS === 'android' ? 10 : 5,
-                height: Platform.OS === 'android' ? 70 : 60,
-            },
-            tabBarLabelStyle: {
-                fontSize: 12,
-                fontWeight: '500',
-            },
-        })}
-    >
-        <Tab.Screen name="Inicio" component={HomeScreen} />
-        <Tab.Screen
-            name="MisTorneos"
-            component={MisTorneosScreen}
-            options={{ tabBarLabel: 'Seguidos' }}
-        />
-        <Tab.Screen name="Buscar" component={BuscarScreen} />
-        <Tab.Screen name="Perfil" component={ProfileScreen} />
-    </Tab.Navigator>
-);
+                    switch (route.name) {
+                        case 'Inicio':
+                            iconName = focused ? 'home' : 'home-outline';
+                            break;
+                        case 'MisTorneos':
+                            iconName = focused ? 'heart' : 'heart-outline';
+                            break;
+                        case 'Buscar':
+                            iconName = focused ? 'search' : 'search-outline';
+                            break;
+                        case 'Perfil':
+                            iconName = focused ? 'person' : 'person-outline';
+                            break;
+                        default:
+                            iconName = 'ellipse';
+                    }
+
+                    return <Ionicons name={iconName} size={size} color={color} />;
+                },
+                tabBarActiveTintColor: COLORS.primary,
+                tabBarInactiveTintColor: COLORS.textSecondary,
+                headerShown: false,
+                tabBarStyle: {
+                    backgroundColor: COLORS.surface,
+                    borderTopWidth: 1,
+                    borderTopColor: COLORS.divider,
+                    paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+                    height: 60 + (insets.bottom > 0 ? insets.bottom - 10 : 0),
+                },
+                tabBarLabelStyle: {
+                    fontSize: 12,
+                    fontWeight: '500',
+                    marginBottom: 4,
+                },
+            })}
+        >
+            <Tab.Screen name="Inicio" component={HomeScreen} />
+            <Tab.Screen
+                name="MisTorneos"
+                component={MisTorneosScreen}
+                options={{ tabBarLabel: 'Seguidos' }}
+            />
+            <Tab.Screen name="Buscar" component={BuscarScreen} />
+            <Tab.Screen name="Perfil" component={ProfileScreen} />
+        </Tab.Navigator>
+    );
+};
 
 // Placeholder para gestionar torneo
 const GestionarTorneoScreen = ({ route, navigation }) => {
-    const { View, Text, ScrollView, SafeAreaView, TouchableOpacity } = require('react-native');
-    const { Card, Button } = require('../components/common');
+    const { View, Text, ScrollView, TouchableOpacity } = require('react-native');
+    const { useSafeAreaInsets } = require('react-native-safe-area-context');
+    const { Card, Button, Loading } = require('../components/common');
+    const insets = useSafeAreaInsets();
     const [torneo, setTorneo] = React.useState(null);
     const [loading, setLoading] = React.useState(true);
     const torneoService = require('../services/torneoService').default;
@@ -243,12 +243,11 @@ const GestionarTorneoScreen = ({ route, navigation }) => {
     };
 
     if (loading) {
-        const { Loading } = require('../components/common');
         return <Loading />;
     }
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <View style={{ flex: 1, backgroundColor: COLORS.background, paddingTop: insets.top, paddingBottom: insets.bottom }}>
             <ScrollView style={{ padding: 16 }}>
                 <TouchableOpacity onPress={() => navigation.goBack()}>
                     <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
@@ -286,7 +285,7 @@ const GestionarTorneoScreen = ({ route, navigation }) => {
                     </Card>
                 </View>
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -294,9 +293,11 @@ const GestionarTorneoScreen = ({ route, navigation }) => {
 
 
 const GestionarPartidosScreen = ({ route, navigation }) => {
-    const { View, Text, SafeAreaView, FlatList, TouchableOpacity } = require('react-native');
+    const { View, Text, FlatList, TouchableOpacity } = require('react-native');
+    const { useSafeAreaInsets } = require('react-native-safe-area-context');
     const { Loading, Card, Button } = require('../components/common');
     const { PartidoCard } = require('../components/partido');
+    const insets = useSafeAreaInsets();
     const [partidos, setPartidos] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const partidoService = require('../services/partidoService').default;
@@ -316,14 +317,49 @@ const GestionarPartidosScreen = ({ route, navigation }) => {
         }
     };
 
+    const handleDeletePartido = (partido) => {
+        const { Alert } = require('react-native');
+        const localName = partido.equipo_local?.nombre_corto || partido.equipo_local?.nombre || 'Local';
+        const visitName = partido.equipo_visitante?.nombre_corto || partido.equipo_visitante?.nombre || 'Visitante';
+
+        Alert.alert(
+            'Eliminar Partido',
+            `¿Estás seguro de eliminar el partido ${localName} vs ${visitName}?`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await partidoService.eliminarPartido(partido.id);
+                            loadPartidos(); // Recargar lista
+                        } catch (error) {
+                            Alert.alert('Error', 'No se pudo eliminar el partido');
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     if (loading) return <Loading />;
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <View style={{ flex: 1, backgroundColor: COLORS.background, paddingTop: insets.top, paddingBottom: insets.bottom }}>
             <View style={{ padding: 16 }}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <TouchableOpacity onPress={() => navigation.goBack()}>
+                        <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 }}
+                        onPress={() => navigation.navigate('CrearPartido', { torneoId: route.params.torneoId })}
+                    >
+                        <Ionicons name="add" size={18} color={COLORS.textOnPrimary} />
+                        <Text style={{ color: COLORS.textOnPrimary, fontWeight: '600', marginLeft: 4 }}>Nuevo</Text>
+                    </TouchableOpacity>
+                </View>
                 <Text style={{ fontSize: 20, fontWeight: '700', marginTop: 16, marginBottom: 16, color: COLORS.textPrimary }}>
                     Partidos
                 </Text>
@@ -344,7 +380,14 @@ const GestionarPartidosScreen = ({ route, navigation }) => {
                                 onPress={() => navigation.navigate('EditarPartido', { partidoId: item.id })}
                             >
                                 <Ionicons name="calendar-outline" size={16} color={COLORS.warning} />
-                                <Text style={{ marginLeft: 4, fontSize: 12, color: COLORS.warning }}>Editar Fecha/Hora</Text>
+                                <Text style={{ marginLeft: 4, fontSize: 12, color: COLORS.warning }}>Editar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8 }}
+                                onPress={() => handleDeletePartido(item)}
+                            >
+                                <Ionicons name="trash-outline" size={16} color={COLORS.error} />
+                                <Text style={{ marginLeft: 4, fontSize: 12, color: COLORS.error }}>Eliminar</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -357,7 +400,7 @@ const GestionarPartidosScreen = ({ route, navigation }) => {
                     </Card>
                 }
             />
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -372,6 +415,7 @@ const MainStack = () => (
         <Stack.Screen name="CrearTorneo" component={CrearTorneoScreen} />
         <Stack.Screen name="EditarTorneo" component={EditarTorneoScreen} />
         <Stack.Screen name="EditarPartido" component={EditarPartidoScreen} />
+        <Stack.Screen name="CrearPartido" component={CrearPartidoScreen} />
         <Stack.Screen name="GestionarTorneo" component={GestionarTorneoScreen} />
         <Stack.Screen name="GestionarEquipos" component={GestionarEquiposScreen} />
         <Stack.Screen name="GestionarJugadores" component={GestionarJugadoresScreen} />

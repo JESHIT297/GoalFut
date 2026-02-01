@@ -4,9 +4,25 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, MATCH_STATUS, MATCH_STATUS_LABELS } from '../../utils/constants';
 import { formatDate, formatTime, formatTimer } from '../../utils/helpers';
 
+// Helper to get readable phase label
+const getFaseLabel = (fase) => {
+    const labels = {
+        'grupos': null, // Use jornada instead
+        'octavos': 'Octavos de Final',
+        'cuartos': 'Cuartos de Final',
+        'semifinal': 'Semifinal',
+        'tercer_puesto': 'Tercer Puesto',
+        'final': 'Final',
+    };
+    return labels[fase] || fase; // For custom phases, return as-is
+};
+
 const PartidoCard = ({ partido, onPress, showTorneo = false }) => {
     const isLive = partido.estado === MATCH_STATUS.EN_JUEGO || partido.estado === MATCH_STATUS.PAUSADO;
     const isFinished = partido.estado === MATCH_STATUS.FINALIZADO;
+
+    // Get phase label for knockout matches
+    const faseLabel = partido.fase && partido.fase !== 'grupos' ? getFaseLabel(partido.fase) : null;
 
     const getStatusColor = () => {
         switch (partido.estado) {
@@ -22,7 +38,7 @@ const PartidoCard = ({ partido, onPress, showTorneo = false }) => {
         }
     };
 
-    const renderTeam = (equipo, goles, isLeft = true) => (
+    const renderTeam = (equipo, goles, penales, isLeft = true) => (
         <View style={[styles.team, isLeft ? styles.teamLeft : styles.teamRight]}>
             {equipo?.logo_url ? (
                 <Image source={{ uri: equipo.logo_url }} style={styles.teamLogo} />
@@ -35,7 +51,12 @@ const PartidoCard = ({ partido, onPress, showTorneo = false }) => {
                 {equipo?.nombre_corto || equipo?.nombre || 'Equipo'}
             </Text>
             {(isLive || isFinished) && (
-                <Text style={styles.score}>{goles}</Text>
+                <View style={styles.scoreContainer}>
+                    <Text style={styles.score}>{goles}</Text>
+                    {penales != null && (
+                        <Text style={styles.penaltyScore}>({penales})</Text>
+                    )}
+                </View>
             )}
         </View>
     );
@@ -48,7 +69,7 @@ const PartidoCard = ({ partido, onPress, showTorneo = false }) => {
 
             <View style={styles.matchInfo}>
                 {/* Equipo Local */}
-                {renderTeam(partido.equipo_local, partido.goles_local, true)}
+                {renderTeam(partido.equipo_local, partido.goles_local, partido.penales_local, true)}
 
                 {/* Centro - Hora o VS */}
                 <View style={styles.center}>
@@ -76,14 +97,16 @@ const PartidoCard = ({ partido, onPress, showTorneo = false }) => {
                     )}
 
                     {isFinished && (
-                        <View style={styles.finalIndicator}>
-                            <Text style={styles.finalText}>FINAL</Text>
+                        <View style={[styles.finalIndicator, partido.penales_local != null && styles.penaltyIndicator]}>
+                            <Text style={styles.finalText}>
+                                {partido.penales_local != null ? 'PENALES' : 'FINAL'}
+                            </Text>
                         </View>
                     )}
                 </View>
 
                 {/* Equipo Visitante */}
-                {renderTeam(partido.equipo_visitante, partido.goles_visitante, false)}
+                {renderTeam(partido.equipo_visitante, partido.goles_visitante, partido.penales_visitante, false)}
             </View>
 
             {/* Footer con fecha y cancha */}
@@ -95,7 +118,13 @@ const PartidoCard = ({ partido, onPress, showTorneo = false }) => {
                     </View>
                 )}
 
-                {partido.jornada && (
+                {/* Show phase for knockout matches, jornada for group stage */}
+                {faseLabel ? (
+                    <View style={styles.footerItem}>
+                        <Ionicons name="trophy-outline" size={14} color={COLORS.primary} />
+                        <Text style={[styles.footerText, { color: COLORS.primary, fontWeight: '600' }]}>{faseLabel}</Text>
+                    </View>
+                ) : partido.jornada && (
                     <View style={styles.footerItem}>
                         <Text style={styles.footerText}>Jornada {partido.jornada}</Text>
                     </View>
@@ -232,6 +261,19 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: COLORS.textSecondary,
         marginLeft: 4,
+    },
+    // Penalty styles
+    scoreContainer: {
+        alignItems: 'center',
+    },
+    penaltyScore: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.primary,
+        marginTop: 2,
+    },
+    penaltyIndicator: {
+        backgroundColor: COLORS.primaryLight,
     },
 });
 

@@ -3,27 +3,32 @@ import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
-    ScrollView,
     TouchableOpacity,
     Alert,
     Modal,
+    ScrollView,
     FlatList,
+    Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useOffline } from '../../contexts/OfflineContext';
 import { Loading, Button, Card } from '../../components/common';
 import partidoService from '../../services/partidoService';
+import offlineMatchService from '../../services/offlineMatchService';
 import { COLORS, MATCH_STATUS, EVENT_TYPES, EVENT_TYPE_LABELS } from '../../utils/constants';
 import { formatTimer } from '../../utils/helpers';
 
 const PartidoEnVivoScreen = ({ route, navigation }) => {
+    const insets = useSafeAreaInsets();
     const { partidoId } = route.params;
     const { isOnline, addToSyncQueue } = useOffline();
 
     const [partido, setPartido] = useState(null);
     const [loading, setLoading] = useState(true);
     const [eventos, setEventos] = useState([]);
+    const [pendingEventsCount, setPendingEventsCount] = useState(0);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Estado del cronómetro
     const [isRunning, setIsRunning] = useState(false);
@@ -37,14 +42,59 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
     const [selectedTeam, setSelectedTeam] = useState(null);
     const [selectedPlayer, setSelectedPlayer] = useState(null);
 
+    // Modal para penales (eliminación directa)
+    const [penalesModalVisible, setPenalesModalVisible] = useState(false);
+    const [penalesLocal, setPenalesLocal] = useState('0');
+    const [penalesVisitante, setPenalesVisitante] = useState('0');
+
     useEffect(() => {
         loadPartido();
+        loadPendingCount();
         return () => {
             if (intervalRef.current) {
                 clearInterval(intervalRef.current);
             }
         };
     }, [partidoId]);
+
+    // Cargar conteo de eventos pendientes
+    const loadPendingCount = async () => {
+        const count = await offlineMatchService.getPendingCount();
+        setPendingEventsCount(count);
+    };
+
+    // Sincronizar cuando vuelva internet
+    useEffect(() => {
+        if (isOnline && pendingEventsCount > 0) {
+            syncPendingData();
+        }
+    }, [isOnline]);
+
+    // Sincronizar datos pendientes
+    const syncPendingData = async () => {
+        if (isSyncing) return;
+        setIsSyncing(true);
+        try {
+            console.log('Iniciando sincronización...');
+            const results = await offlineMatchService.syncPendingData();
+            console.log('Sincronización completada:', results);
+
+            // Recargar partido para obtener datos actualizados
+            await loadPartido();
+            await loadPendingCount();
+
+            if (results.eventsSync.success > 0 || results.matchUpdatesSync.success > 0) {
+                Alert.alert(
+                    'Sincronización Exitosa',
+                    `Se sincronizaron ${results.eventsSync.success} eventos y ${results.matchUpdatesSync.success} actualizaciones.`
+                );
+            }
+        } catch (error) {
+            console.error('Error en sincronización:', error);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     useEffect(() => {
         if (isRunning) {
@@ -64,32 +114,72 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
         };
     }, [isRunning]);
 
-    // Sincronizar tiempo con la base de datos cada 60 segundos (1 minuto)
+    // Sincronizar tiempo con la base de datos cada 10 segundos (solo si hay internet)
     useEffect(() => {
-        if (isRunning && seconds > 0 && seconds % 60 === 0) {
-            // Guardar tiempo en la DB para que otros usuarios lo vean
-            partidoService.actualizarPartido(partidoId, {
-                segundos_jugados: seconds,
-                tiempo_actual: currentHalf
-            }).catch(err => console.log('Error syncing time:', err));
+        if (isRunning && seconds > 0 && seconds % 10 === 0) {
+            if (isOnline) {
+                // Guardar tiempo en la DB para que otros usuarios lo vean
+                console.log('Sincronizando tiempo a DB:', seconds);
+                partidoService.actualizarPartido(partidoId, {
+                    segundos_jugados: seconds,
+                    tiempo_actual: currentHalf
+                }).catch(err => console.log('Error syncing time:', err));
+            } else {
+                // Guardar tiempo localmente
+                offlineMatchService.saveMatchUpdateOffline(partidoId, {
+                    segundos_jugados: seconds,
+                    tiempo_actual: currentHalf,
+                    estado: MATCH_STATUS.EN_JUEGO
+                });
+                loadPendingCount();
+            }
         }
-    }, [seconds, isRunning, partidoId, currentHalf]);
+    }, [seconds, isRunning, partidoId, currentHalf, isOnline]);
 
     const loadPartido = async () => {
         try {
             const data = await partidoService.getPartidoById(partidoId);
             setPartido(data);
-            setEventos(data.eventos || []);
+            // Ordenar eventos: más recientes primero
+            const sortedEventos = (data.eventos || []).sort((a, b) => {
+                // Primero por tiempo (2T antes que 1T si es más reciente)
+                if (b.tiempo !== a.tiempo) return b.tiempo - a.tiempo;
+                // Luego por minuto descendente
+                return b.minuto - a.minuto;
+            });
+            setEventos(sortedEventos);
+
+            console.log('=== DEBUG TIMER ===');
+            console.log('Estado partido:', data.estado);
+            console.log('tiempo_inicio_real:', data.tiempo_inicio_real);
+            console.log('segundos_jugados guardados:', data.segundos_jugados);
 
             // Restaurar estado del cronómetro si el partido está en juego
             if (data.estado === MATCH_STATUS.EN_JUEGO) {
                 setIsRunning(true);
-                setSeconds(data.segundos_jugados || 0);
                 setCurrentHalf(data.tiempo_actual || 1);
-            } else if (data.estado === MATCH_STATUS.PAUSADO) {
+
+                // Calcular segundos transcurridos desde tiempo_inicio_real
+                if (data.tiempo_inicio_real) {
+                    const startTime = new Date(data.tiempo_inicio_real).getTime();
+                    const now = Date.now();
+                    const elapsedSeconds = Math.floor((now - startTime) / 1000);
+                    const finalSeconds = Math.max(elapsedSeconds, data.segundos_jugados || 0);
+                    console.log('startTime:', startTime);
+                    console.log('now:', now);
+                    console.log('elapsedSeconds calculados:', elapsedSeconds);
+                    console.log('finalSeconds a usar:', finalSeconds);
+                    setSeconds(finalSeconds);
+                } else {
+                    console.log('NO HAY tiempo_inicio_real, usando segundos_jugados');
+                    setSeconds(data.segundos_jugados || 0);
+                }
+            } else if (data.estado === MATCH_STATUS.PAUSADO || data.estado === MATCH_STATUS.MEDIO_TIEMPO) {
+                console.log('Partido pausado/medio tiempo, usando segundos_jugados:', data.segundos_jugados);
                 setSeconds(data.segundos_jugados || 0);
                 setCurrentHalf(data.tiempo_actual || 1);
             }
+            console.log('===================');
         } catch (error) {
             console.error('Error loading partido:', error);
             Alert.alert('Error', 'No se pudo cargar el partido');
@@ -118,7 +208,7 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                 setIsRunning(false);
                 setPartido(prev => ({ ...prev, estado: MATCH_STATUS.PAUSADO }));
             } else {
-                await partidoService.reanudarPartido(partidoId);
+                await partidoService.reanudarPartido(partidoId, seconds);
                 setIsRunning(true);
                 setPartido(prev => ({ ...prev, estado: MATCH_STATUS.EN_JUEGO }));
             }
@@ -144,17 +234,28 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                             setSeconds(0);
                             Alert.alert('Medio Tiempo', 'Presiona Iniciar cuando comience el segundo tiempo');
                         } else {
-                            // Finalizar partido
-                            try {
-                                await partidoService.finalizarPartido(partidoId, seconds);
-                                Alert.alert(
-                                    'Partido Finalizado',
-                                    `Resultado final: ${partido.equipo_local.nombre} ${partido.goles_local} - ${partido.goles_visitante} ${partido.equipo_visitante.nombre}`,
-                                    [{ text: 'OK', onPress: () => navigation.goBack() }]
-                                );
-                            } catch (error) {
-                                console.error('Error finalizing match:', error);
-                                Alert.alert('Error', 'No se pudo finalizar el partido');
+                            // Verificar si es partido de eliminación y está empatado
+                            const isKnockout = partido.fase && partido.fase !== 'grupos';
+                            const isTied = partido.goles_local === partido.goles_visitante;
+
+                            if (isKnockout && isTied) {
+                                // Mostrar modal de penales
+                                setPenalesLocal('0');
+                                setPenalesVisitante('0');
+                                setPenalesModalVisible(true);
+                            } else {
+                                // Finalizar normalmente
+                                try {
+                                    await partidoService.finalizarPartido(partidoId, seconds);
+                                    Alert.alert(
+                                        'Partido Finalizado',
+                                        `Resultado final: ${partido.equipo_local.nombre} ${partido.goles_local} - ${partido.goles_visitante} ${partido.equipo_visitante.nombre}`,
+                                        [{ text: 'OK', onPress: () => navigation.goBack() }]
+                                    );
+                                } catch (error) {
+                                    console.error('Error finalizing match:', error);
+                                    Alert.alert('Error', 'No se pudo finalizar el partido');
+                                }
                             }
                         }
                     },
@@ -163,9 +264,33 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
         );
     };
 
+    const handleFinalizarConPenales = async () => {
+        const penL = parseInt(penalesLocal) || 0;
+        const penV = parseInt(penalesVisitante) || 0;
+
+        if (penL === penV) {
+            Alert.alert('Error', 'Los penales no pueden terminar empatados');
+            return;
+        }
+
+        try {
+            await partidoService.finalizarConPenales(partidoId, seconds, penL, penV);
+            setPenalesModalVisible(false);
+            const ganador = penL > penV ? partido.equipo_local.nombre : partido.equipo_visitante.nombre;
+            Alert.alert(
+                'Partido Finalizado',
+                `Resultado: ${partido.equipo_local.nombre} ${partido.goles_local} (${penL}) - (${penV}) ${partido.goles_visitante} ${partido.equipo_visitante.nombre}\n\nGanador por penales: ${ganador}`,
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+            );
+        } catch (error) {
+            console.error('Error finalizing with penalties:', error);
+            Alert.alert('Error', 'No se pudo finalizar el partido');
+        }
+    };
+
     const handleStartSecondHalf = async () => {
         try {
-            await partidoService.iniciarSegundoTiempo(partidoId);
+            await partidoService.iniciarSegundoTiempo(partidoId, seconds);
             setIsRunning(true);
             setPartido(prev => ({ ...prev, estado: MATCH_STATUS.EN_JUEGO, tiempo_actual: 2 }));
         } catch (error) {
@@ -200,17 +325,22 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                 segundo,
             };
 
-            // Si no hay conexión, agregar a cola de sincronización
+            // Si no hay conexión, guardar offline
             if (!isOnline) {
-                await addToSyncQueue({
-                    table: 'eventos_partido',
-                    operation: 'INSERT',
-                    data: eventoData,
-                });
+                // Usar el nuevo servicio offline
+                const offlineEvent = await offlineMatchService.saveEventOffline(eventoData);
+                console.log('Evento guardado offline:', offlineEvent.offlineId);
 
                 // Actualizar UI localmente
-                setEventos(prev => [...prev, { ...eventoData, jugador: selectedPlayer }]);
+                const localEvento = {
+                    ...eventoData,
+                    id: offlineEvent.offlineId, // ID temporal
+                    jugador: selectedPlayer,
+                    isOffline: true, // Marcador para identificar eventos offline
+                };
+                setEventos(prev => [localEvento, ...prev]);
 
+                // Actualizar marcador localmente si es gol
                 if ([EVENT_TYPES.GOL, EVENT_TYPES.GOL_PENAL].includes(eventType)) {
                     const isLocal = selectedTeam.id === partido.equipo_local.id;
                     setPartido(prev => ({
@@ -218,14 +348,38 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                         goles_local: isLocal ? prev.goles_local + 1 : prev.goles_local,
                         goles_visitante: !isLocal ? prev.goles_visitante + 1 : prev.goles_visitante,
                     }));
+                } else if (eventType === EVENT_TYPES.AUTOGOL) {
+                    // Autogol cuenta para el equipo contrario
+                    const isLocal = selectedTeam.id === partido.equipo_local.id;
+                    setPartido(prev => ({
+                        ...prev,
+                        goles_local: !isLocal ? prev.goles_local + 1 : prev.goles_local,
+                        goles_visitante: isLocal ? prev.goles_visitante + 1 : prev.goles_visitante,
+                    }));
                 }
+
+                // Actualizar conteo de pendientes
+                await loadPendingCount();
+
+                // Notificar al usuario
+                Alert.alert(
+                    '📴 Guardado Offline',
+                    'El evento se guardó localmente y se sincronizará cuando tengas internet.',
+                    [{ text: 'OK' }]
+                );
             } else {
                 const nuevoEvento = await partidoService.registrarEvento(eventoData);
-                setEventos(prev => [...prev, nuevoEvento]);
 
-                // Recargar partido para actualizar marcador
+                // Recargar partido para actualizar marcador y sincronizar eventos
                 const updatedPartido = await partidoService.getPartidoById(partidoId);
                 setPartido(updatedPartido);
+
+                // Ordenar eventos: más recientes primero
+                const sortedEventos = (updatedPartido.eventos || []).sort((a, b) => {
+                    if (b.tiempo !== a.tiempo) return b.tiempo - a.tiempo;
+                    return b.minuto - a.minuto;
+                });
+                setEventos(sortedEventos);
             }
 
             setModalVisible(false);
@@ -249,20 +403,85 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
+                            console.log('Eliminando evento ID:', evento.id);
                             await partidoService.eliminarEvento(evento.id);
-                            setEventos(prev => prev.filter(e => e.id !== evento.id));
-                            // Recargar partido para actualizar marcador
+                            console.log('Evento eliminado exitosamente');
+
+                            // Recargar partido para actualizar marcador y sincronizar eventos
                             const updatedPartido = await partidoService.getPartidoById(partidoId);
+                            console.log('Eventos después de eliminar:', updatedPartido.eventos?.length);
+
                             setPartido(updatedPartido);
+
+                            // Ordenar eventos: más recientes primero
+                            const sortedEventos = (updatedPartido.eventos || []).sort((a, b) => {
+                                if (b.tiempo !== a.tiempo) return b.tiempo - a.tiempo;
+                                return b.minuto - a.minuto;
+                            });
+                            setEventos(sortedEventos);
+
+                            Alert.alert('Éxito', 'Evento eliminado correctamente');
                         } catch (error) {
                             console.error('Error deleting event:', error);
-                            Alert.alert('Error', 'No se pudo eliminar el evento');
+                            Alert.alert('Error', 'No se pudo eliminar el evento: ' + error.message);
                         }
                     },
                 },
             ]
         );
     };
+
+    const handleWalkover = () => {
+        if (!partido) return;
+
+        Alert.alert(
+            'Ganar por W.O.',
+            '¿Qué equipo gana por W.O. (Walkover)?',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: partido.equipo_local.nombre_corto || 'Local',
+                    onPress: () => confirmarWalkover('local'),
+                },
+                {
+                    text: partido.equipo_visitante.nombre_corto || 'Visitante',
+                    onPress: () => confirmarWalkover('visitante'),
+                },
+            ]
+        );
+    };
+
+    const confirmarWalkover = async (ganador) => {
+        try {
+            // Obtener configuración de W.O. del torneo
+            const golesGanador = partido.torneo?.goles_wo_ganador ?? 3;
+            const golesPerdedor = partido.torneo?.goles_wo_perdedor ?? 0;
+
+            // Actualizar marcador según ganador
+            const goles_local = ganador === 'local' ? golesGanador : golesPerdedor;
+            const goles_visitante = ganador === 'visitante' ? golesGanador : golesPerdedor;
+
+            await partidoService.actualizarPartido(partidoId, {
+                goles_local,
+                goles_visitante,
+                estado: MATCH_STATUS.FINALIZADO,
+                observaciones: `Partido ganado por W.O. - ${ganador === 'local' ? partido.equipo_local.nombre : partido.equipo_visitante.nombre}`,
+            });
+
+            // Actualizar estadísticas de equipos
+            await partidoService.finalizarPartido(partidoId, 0);
+
+            Alert.alert(
+                'W.O. Registrado',
+                `${ganador === 'local' ? partido.equipo_local.nombre : partido.equipo_visitante.nombre} gana por W.O. (${golesGanador}-${golesPerdedor})`,
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+            );
+        } catch (error) {
+            console.error('Error processing walkover:', error);
+            Alert.alert('Error', 'No se pudo registrar el W.O.');
+        }
+    };
+
     const getEventIcon = (tipo) => {
         switch (tipo) {
             case EVENT_TYPES.GOL:
@@ -290,9 +509,9 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
 
     if (!partido) {
         return (
-            <SafeAreaView style={styles.container}>
+            <View style={[styles.container, { paddingTop: insets.top }]}>
                 <Text>No se pudo cargar el partido</Text>
-            </SafeAreaView>
+            </View>
         );
     }
 
@@ -301,7 +520,7 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
     const maxMinutes = partido.torneo?.duracion_tiempo_minutos || 20;
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Header */}
                 <View style={styles.header}>
@@ -311,11 +530,28 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                     <Text style={styles.headerTitle}>
                         {isMatchFinished ? 'Resumen' : 'Partido en Vivo'}
                     </Text>
-                    {!isOnline && (
-                        <View style={styles.offlineBadge}>
-                            <Ionicons name="cloud-offline" size={16} color={COLORS.warning} />
-                        </View>
-                    )}
+                    <View style={styles.headerRight}>
+                        {/* Indicador de eventos pendientes */}
+                        {pendingEventsCount > 0 && (
+                            <TouchableOpacity
+                                style={styles.pendingBadge}
+                                onPress={isOnline ? syncPendingData : null}
+                            >
+                                <Ionicons
+                                    name={isSyncing ? "sync" : "cloud-upload"}
+                                    size={16}
+                                    color={COLORS.textOnPrimary}
+                                />
+                                <Text style={styles.pendingText}>{pendingEventsCount}</Text>
+                            </TouchableOpacity>
+                        )}
+                        {/* Badge offline */}
+                        {!isOnline && (
+                            <View style={styles.offlineBadge}>
+                                <Ionicons name="cloud-offline" size={16} color={COLORS.warning} />
+                            </View>
+                        )}
+                    </View>
                 </View>
 
                 {/* Marcador */}
@@ -323,9 +559,14 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                     <View style={styles.scoreContainer}>
                         {/* Equipo Local */}
                         <View style={styles.teamScore}>
-                            <View style={[styles.teamBadge, { backgroundColor: partido.equipo_local.color_principal || COLORS.primary }]}>
-                                <Ionicons name="shield" size={24} color={COLORS.textOnPrimary} />
-                            </View>
+                            {/* Logo equipo local */}
+                            {partido.equipo_local.logo_url ? (
+                                <Image source={{ uri: partido.equipo_local.logo_url }} style={styles.teamLogo} />
+                            ) : (
+                                <View style={[styles.teamBadge, { backgroundColor: partido.equipo_local.color_principal || COLORS.primary }]}>
+                                    <Ionicons name="shield" size={24} color={COLORS.textOnPrimary} />
+                                </View>
+                            )}
                             <Text style={styles.teamName} numberOfLines={2}>
                                 {partido.equipo_local.nombre_corto || partido.equipo_local.nombre}
                             </Text>
@@ -345,9 +586,14 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
 
                         {/* Equipo Visitante */}
                         <View style={styles.teamScore}>
-                            <View style={[styles.teamBadge, { backgroundColor: partido.equipo_visitante.color_principal || COLORS.secondary }]}>
-                                <Ionicons name="shield" size={24} color={COLORS.textOnPrimary} />
-                            </View>
+                            {/* Logo equipo visitante */}
+                            {partido.equipo_visitante.logo_url ? (
+                                <Image source={{ uri: partido.equipo_visitante.logo_url }} style={styles.teamLogo} />
+                            ) : (
+                                <View style={[styles.teamBadge, { backgroundColor: partido.equipo_visitante.color_principal || COLORS.secondary }]}>
+                                    <Ionicons name="shield" size={24} color={COLORS.textOnPrimary} />
+                                </View>
+                            )}
                             <Text style={styles.teamName} numberOfLines={2}>
                                 {partido.equipo_visitante.nombre_corto || partido.equipo_visitante.nombre}
                             </Text>
@@ -360,11 +606,21 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                 {!isMatchFinished && (
                     <View style={styles.controls}>
                         {!isMatchStarted ? (
-                            <Button
-                                title="Iniciar Partido"
-                                onPress={handleStartMatch}
-                                icon={<Ionicons name="play" size={20} color={COLORS.textOnPrimary} />}
-                            />
+                            <View style={styles.startMatchRow}>
+                                <Button
+                                    title="Iniciar Partido"
+                                    onPress={handleStartMatch}
+                                    icon={<Ionicons name="play" size={20} color={COLORS.textOnPrimary} />}
+                                    style={{ flex: 1, marginRight: 8 }}
+                                />
+                                <TouchableOpacity
+                                    style={styles.woButton}
+                                    onPress={handleWalkover}
+                                >
+                                    <Ionicons name="ban" size={20} color={COLORS.error} />
+                                    <Text style={styles.woButtonText}>W.O.</Text>
+                                </TouchableOpacity>
+                            </View>
                         ) : currentHalf === 2 && !isRunning && seconds === 0 ? (
                             <Button
                                 title="Iniciar 2do Tiempo"
@@ -451,7 +707,7 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                             return (
                                 <View key={evento.id || index} style={styles.eventItem}>
                                     <Text style={styles.eventTime}>
-                                        {evento.minuto}'{evento.tiempo === 2 ? ' (2T)' : ''}
+                                        {evento.minuto}' ({evento.tiempo === 2 ? '2T' : '1T'})
                                     </Text>
                                     <Ionicons name={icon.name} size={20} color={icon.color} />
                                     <Text style={styles.eventPlayer}>
@@ -550,7 +806,77 @@ const PartidoEnVivoScreen = ({ route, navigation }) => {
                     </View>
                 </View>
             </Modal>
-        </SafeAreaView>
+
+            {/* Modal de Penales */}
+            <Modal
+                visible={penalesModalVisible}
+                transparent
+                animationType="slide"
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>🥅 Tanda de Penales</Text>
+                        <Text style={styles.modalSubtitle}>El partido terminó empatado. Ingresa el resultado de los penales:</Text>
+
+                        <View style={styles.penalesContainer}>
+                            <View style={styles.penalTeam}>
+                                <Text style={styles.penalTeamName}>{partido?.equipo_local?.nombre_corto || partido?.equipo_local?.nombre}</Text>
+                                <View style={styles.penalInputContainer}>
+                                    <TouchableOpacity
+                                        style={styles.penalBtn}
+                                        onPress={() => setPenalesLocal(String(Math.max(0, parseInt(penalesLocal) - 1)))}
+                                    >
+                                        <Ionicons name="remove" size={24} color={COLORS.textPrimary} />
+                                    </TouchableOpacity>
+                                    <Text style={styles.penalValue}>{penalesLocal}</Text>
+                                    <TouchableOpacity
+                                        style={styles.penalBtn}
+                                        onPress={() => setPenalesLocal(String(parseInt(penalesLocal) + 1))}
+                                    >
+                                        <Ionicons name="add" size={24} color={COLORS.textPrimary} />
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+
+                            <Text style={styles.penalVs}>vs</Text>
+
+                            <View style={styles.penalTeam}>
+                                <Text style={styles.penalTeamName}>{partido?.equipo_visitante?.nombre_corto || partido?.equipo_visitante?.nombre}</Text>
+                                <View style={styles.penalInputContainer}>
+                                    <TouchableOpacity
+                                        style={styles.penalBtn}
+                                        onPress={() => setPenalesVisitante(String(Math.max(0, parseInt(penalesVisitante) - 1)))}
+                                    >
+                                        <Ionicons name="remove" size={24} color={COLORS.textPrimary} />
+                                    </TouchableOpacity>
+                                    <Text style={styles.penalValue}>{penalesVisitante}</Text>
+                                    <TouchableOpacity
+                                        style={styles.penalBtn}
+                                        onPress={() => setPenalesVisitante(String(parseInt(penalesVisitante) + 1))}
+                                    >
+                                        <Ionicons name="add" size={24} color={COLORS.textPrimary} />
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+
+                        <View style={styles.penalButtons}>
+                            <Button
+                                title="Cancelar"
+                                variant="secondary"
+                                onPress={() => setPenalesModalVisible(false)}
+                                style={{ flex: 1, marginRight: 8 }}
+                            />
+                            <Button
+                                title="Finalizar"
+                                onPress={handleFinalizarConPenales}
+                                style={{ flex: 1, marginLeft: 8 }}
+                            />
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </View>
     );
 };
 
@@ -573,6 +899,25 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: COLORS.textPrimary,
         marginLeft: 16,
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    pendingBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 20,
+        gap: 4,
+    },
+    pendingText: {
+        color: COLORS.textOnPrimary,
+        fontSize: 12,
+        fontWeight: '600',
     },
     offlineBadge: {
         padding: 8,
@@ -597,6 +942,12 @@ const styles = StyleSheet.create({
         borderRadius: 25,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    teamLogo: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: COLORS.background,
     },
     teamName: {
         fontSize: 14,
@@ -638,6 +989,25 @@ const styles = StyleSheet.create({
     maxTime: {
         fontSize: 14,
         color: COLORS.textSecondary,
+    },
+    startMatchRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    woButton: {
+        backgroundColor: COLORS.surface,
+        borderWidth: 2,
+        borderColor: COLORS.error,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    woButtonText: {
+        color: COLORS.error,
+        fontWeight: '700',
+        marginLeft: 6,
     },
     controls: {
         marginBottom: 16,
@@ -841,6 +1211,54 @@ const styles = StyleSheet.create({
     deleteEventBtn: {
         padding: 8,
         marginLeft: 8,
+    },
+    // Penalty shootout modal styles
+    penalesContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+        marginVertical: 24,
+    },
+    penalTeam: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    penalTeamName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    penalInputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    penalBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: COLORS.surfaceVariant,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    penalValue: {
+        fontSize: 36,
+        fontWeight: '700',
+        color: COLORS.primary,
+        marginHorizontal: 16,
+        minWidth: 40,
+        textAlign: 'center',
+    },
+    penalVs: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textSecondary,
+        marginHorizontal: 8,
+    },
+    penalButtons: {
+        flexDirection: 'row',
+        marginTop: 16,
     },
 });
 

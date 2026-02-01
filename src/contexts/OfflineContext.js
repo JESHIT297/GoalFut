@@ -4,6 +4,8 @@ import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../config/supabase';
 import { CACHE_KEYS } from '../utils/constants';
 import { generateSyncId } from '../utils/helpers';
+import * as database from '../database/database';
+import * as syncService from '../services/syncService';
 
 const OfflineContext = createContext({});
 
@@ -12,25 +14,65 @@ export const OfflineProvider = ({ children }) => {
     const [syncQueue, setSyncQueue] = useState([]);
     const [isSyncing, setIsSyncing] = useState(false);
     const [lastSyncTime, setLastSyncTime] = useState(null);
+    const [isDatabaseReady, setIsDatabaseReady] = useState(false);
+    const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
     useEffect(() => {
+        // Initialize SQLite database
+        initializeDatabase();
+
         // Cargar cola de sincronización
         loadSyncQueue();
         loadLastSyncTime();
 
         // Suscribirse a cambios de conectividad
-        const unsubscribe = NetInfo.addEventListener(state => {
-            const online = state.isConnected && state.isInternetReachable;
+        const unsubscribe = NetInfo.addEventListener(async state => {
+            const wasOffline = !isOnline;
+            const online = state.isConnected && (state.isInternetReachable !== false);
             setIsOnline(online);
 
             // Sincronizar cuando vuelva la conexión
-            if (online) {
+            if (online && wasOffline && isDatabaseReady) {
+                console.log('Network reconnected - starting sync...');
                 processSyncQueue();
+
+                // Also sync via syncService
+                try {
+                    const result = await syncService.syncPendingOperations();
+                    console.log('SyncService result:', result);
+                    await updatePendingSyncCount();
+                } catch (error) {
+                    console.error('Error in background sync:', error);
+                }
             }
         });
 
         return () => unsubscribe();
-    }, []);
+    }, [isDatabaseReady, isOnline]);
+
+    // Initialize SQLite database
+    const initializeDatabase = async () => {
+        try {
+            await database.initDatabase();
+            setIsDatabaseReady(true);
+            console.log('SQLite database ready');
+
+            // Update pending sync count
+            updatePendingSyncCount();
+        } catch (error) {
+            console.error('Error initializing database:', error);
+        }
+    };
+
+    // Update pending sync count from SQLite
+    const updatePendingSyncCount = async () => {
+        try {
+            const status = await syncService.getSyncStatus();
+            setPendingSyncCount(status.pendingOperations);
+        } catch (error) {
+            console.error('Error getting sync status:', error);
+        }
+    };
 
     const loadSyncQueue = async () => {
         try {
@@ -53,6 +95,7 @@ export const OfflineProvider = ({ children }) => {
             console.error('Error loading last sync time:', error);
         }
     };
+
 
     const saveSyncQueue = async (queue) => {
         try {
@@ -227,13 +270,28 @@ export const OfflineProvider = ({ children }) => {
         isSyncing,
         syncQueue,
         lastSyncTime,
-        pendingSyncCount: syncQueue.length,
-        hasOnlineChanges: syncQueue.length > 0,
+        isDatabaseReady,
+        pendingSyncCount,
+        hasOnlineChanges: pendingSyncCount > 0 || syncQueue.length > 0,
         addToSyncQueue,
         processSyncQueue,
         cacheData,
         getCachedData,
         clearCache,
+        // SQLite functions
+        database,
+        syncService,
+        // Convenience methods
+        saveOfflineData: syncService.saveData,
+        getOfflineData: syncService.getData,
+        forceSyncNow: async () => {
+            if (isOnline) {
+                const result = await syncService.syncPendingOperations();
+                await updatePendingSyncCount();
+                return result;
+            }
+            return { success: false, message: 'Sin conexión' };
+        },
     };
 
     return (
